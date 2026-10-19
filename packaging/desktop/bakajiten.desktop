@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=bakajiten
+Comment=Japanese dictionary with handwriting recognition
+Exec=bakajiten
+Icon=bakajiten
+Categories=Education;
+Terminal=false
+StartupWMClass=bakajiten

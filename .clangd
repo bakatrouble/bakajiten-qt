@@ -1,0 +1,12 @@
+# clangd (CLion's engine too) is clang-based: it cannot parse the
+# P2996 reflection in cpp/dev/uiform.h, so it reads the tool-compat
+# stub there instead — navigation and completion keep working.
+# The two Removes drop GCC-only flags from the compile commands
+# that would otherwise surface as driver warnings.
+CompileFlags:
+  Remove: [-mno-direct-extern-access, -freflection]
+# Unused includes fail the build (misc-include-cleaner in
+# .clang-tidy); surface the same check inline while editing.
+Diagnostics:
+  ClangTidy:
+    Add: misc-include-cleaner

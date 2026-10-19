@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>KanjiDialog</class>
+ <widget class="QDialog" name="kanjiDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>570</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>800</width>
+    <height>500</height>
+   </size>
+  </property>
+  <layout class="QVBoxLayout" name="outer">
+   <item>
+    <widget class="QTabWidget" name="kanjiTabs">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="sod">
+      <attribute name="title">
+       <string>Info</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="sodLayout">
+       <item>
+        <widget class="QWidget" name="columns" native="true">
+         <layout class="QHBoxLayout" name="columnLayout">
+          <property name="spacing">
+           <number>12</number>
+          </property>
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <item>
+           <widget class="KanjiStrokeView" name="kanjiStrokeView" native="true">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QScrollArea" name="detailsScroll">
+            <property name="frameShape">
+             <enum>QFrame::Shape::NoFrame</enum>
+            </property>
+            <property name="horizontalScrollBarPolicy">
+             <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
+            </property>
+            <property name="widgetResizable">
+             <bool>true</bool>
+            </property>
+            <widget class="QWidget" name="kanjiDetails">
+             <property name="geometry">
+              <rect>
+               <x>0</x>
+               <y>0</y>
+               <width>379</width>
+               <height>84</height>
+              </rect>
+             </property>
+             <layout class="QVBoxLayout" name="rows">
+              <property name="spacing">
+               <number>2</number>
+              </property>
+              <property name="leftMargin">
+               <number>0</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <property name="rightMargin">
+               <number>0</number>
+              </property>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
+              <item>
+               <widget class="RunLabel" name="kanjiInfo" native="true"/>
+              </item>
+              <item>
+               <spacer name="detailsStretch">
+                <property name="orientation">
+                 <enum>Qt::Orientation::Vertical</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>20</width>
+                  <height>40</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QWidget" name="controls" native="true">
+         <layout class="QHBoxLayout" name="controlsLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <item>
+           <widget class="QPushButton" name="kanjiRestartButton">
+            <property name="toolTip">
+             <string>Restart</string>
+            </property>
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="kanjiPlayButton">
+            <property name="toolTip">
+             <string>Play</string>
+            </property>
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="kanjiPauseButton">
+            <property name="toolTip">
+             <string>Pause</string>
+            </property>
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="kanjiStopButton">
+            <property name="toolTip">
+             <string>Stop</string>
+            </property>
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="kanjiPrevButton">
+            <property name="toolTip">
+             <string>Previous stroke</string>
+            </property>
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="kanjiStrokeCounter">
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="kanjiNextButton">
+            <property name="toolTip">
+             <string>Next stroke</string>
+            </property>
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="speedLabel">
+            <property name="text">
+             <string>Speed:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSlider" name="kanjiSpeed">
+            <property name="minimum">
+             <number>1</number>
+            </property>
+            <property name="maximum">
+             <number>10</number>
+            </property>
+            <property name="value">
+             <number>5</number>
+            </property>
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="wordsTab">
+      <attribute name="title">
+       <string>Words</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="wordsLayout">
+       <property name="leftMargin">
+        <number>4</number>
+       </property>
+       <property name="topMargin">
+        <number>4</number>
+       </property>
+       <property name="rightMargin">
+        <number>4</number>
+       </property>
+       <property name="bottomMargin">
+        <number>4</number>
+       </property>
+       <item>
+        <widget class="DictionaryTable" name="kanjiWordsTable"/>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kanjiSimilarCheck">
+     <property name="text">
+      <string>Similar</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="CandidateList" name="kanjiSimilarStrip"/>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kanjiPartsCheck">
+     <property name="text">
+      <string>Parts</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="CandidateList" name="kanjiPartsStrip"/>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="kanjiPartOfCheck">
+     <property name="text">
+      <string>Part of</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="CandidateList" name="kanjiPartOfStrip"/>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>KanjiStrokeView</class>
+   <extends>QWidget</extends>
+   <header>ui/kanji/KanjiStrokeView.h</header>
+  </customwidget>
+  <customwidget>
+   <class>RunLabel</class>
+   <extends>QWidget</extends>
+   <header>widgets/text/RunLabel.h</header>
+  </customwidget>
+  <customwidget>
+   <class>DictionaryTable</class>
+   <extends>QTableView</extends>
+   <header>widgets/table/DictionaryTable.h</header>
+  </customwidget>
+  <customwidget>
+   <class>CandidateList</class>
+   <extends>QListWidget</extends>
+   <header>widgets/list/CandidateList.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

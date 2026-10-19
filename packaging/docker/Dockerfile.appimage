@@ -1,0 +1,161 @@
+# syntax=docker/dockerfile:1
+
+# AppImage build + deploy image: Rocky Linux 8 (glibc 2.28 floor,
+# like Telegram's centos_env), shared Qt 6.10.3, static yaml-cpp,
+# Rust + UniFFI generator, and the linuxdeploy tooling baked in (no
+# network or FUSE needed at deploy). The release build configures
+# AND deploys inside this image, so the Qt the app links is the Qt
+# linuxdeploy bundles — no host Qt involved anywhere.
+# packaging/build-appimage.sh wraps it (host build and deploy both
+# run here; SKIP_BUILD=1 deploys a given AppDir, which is how CI
+# reuses its tested install tree).
+#
+# Local build (Qt download ~10 min, cached in its own layer):
+#   docker build -f frontends/qt/packaging/docker/Dockerfile.appimage -t bakajiten-appimage .
+FROM rockylinux:8 AS base
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+ENV TOOLSET=gcc-toolset-15
+ENV PATH=/opt/rh/$TOOLSET/root/usr/bin:$PATH
+ENV LD_LIBRARY_PATH=/opt/rh/$TOOLSET/root/usr/lib64:/opt/rh/$TOOLSET/root/usr/lib:/usr/lib64:/usr/lib
+ENV PKG_CONFIG_PATH=/opt/rh/$TOOLSET/root/usr/lib64/pkgconfig:/opt/rh/$TOOLSET/root/usr/lib/pkgconfig:/usr/lib64/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+RUN ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/gcc /usr/local/bin/gcc \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/g++ /usr/local/bin/g++ \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/cc /usr/local/bin/cc \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/c++ /usr/local/bin/c++ \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/ar /usr/local/bin/ar \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/ranlib /usr/local/bin/ranlib
+
+RUN --mount=type=cache,target=/var/cache/dnf <<EOF
+dnf -y install epel-release
+dnf -y install dnf-plugins-core
+dnf config-manager --set-enabled powertools
+dnf -y install cmake ninja-build git curl pkg-config perl tar gzip file \
+    python3.11-pip \
+    fontconfig-devel freetype-devel \
+    libxcb-devel libX11-devel libXi-devel \
+    xcb-util-wm-devel xcb-util-image-devel xcb-util-keysyms-devel \
+    xcb-util-renderutil-devel xcb-util-cursor-devel xcb-util-devel \
+    libXrender-devel libXrandr-devel \
+    libXcursor-devel dbus-devel libxkbcommon-devel libxkbcommon-x11-devel \
+    wayland-devel wayland-protocols-devel \
+    mesa-libGL-devel \
+    ccache $TOOLSET-gcc $TOOLSET-gcc-c++ $TOOLSET-binutils
+alternatives --set python3 /usr/bin/python3.11
+python3 -m pip install cmake ninja
+EOF
+
+ENV CC="gcc"
+ENV CXX="g++"
+ENV CMAKE_GENERATOR=Ninja
+
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN --mount=type=cache,target=/opt/cargo/registry <<EOF
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal \
+&& cargo install uniffi-bindgen-cpp \
+    --git https://github.com/NordSecurity/uniffi-bindgen-cpp \
+    --tag v0.10.0+v0.31.0
+EOF
+WORKDIR /work
+
+# Shared Qt 6.10.3, built from source: aqt's prebuilt moc/uic/rcc
+# need glibc 2.33+, but this image is glibc 2.28 — and the AppImage
+# must run on the same floor it builds on. Same configure as the
+# static image, minus -static (plus -shared).
+FROM base AS qt-src
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+python3 -m pip install aqtinstall==3.3.0
+aqt install-src linux 6.10.3 \
+    -O /usr/src/qt6-src --archives qtbase qtsvg qtwayland
+EOF
+
+FROM base AS qt
+COPY --from=qt-src /usr/src/qt6-src /usr/src/qt6-src
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+mkdir -p /tmp/qt6-build && cd /tmp/qt6-build
+/usr/src/qt6-src/6.10.3/Src/qtbase/configure \
+    -shared -release -prefix /opt/qt \
+    -opensource -confirm-license \
+    -nomake tests -nomake examples \
+    -no-warnings-are-errors -no-vulkan -no-opengl \
+&& cmake --build . --parallel "$(nproc)" \
+&& cmake --install . \
+&& rm -rf /tmp/qt6-build
+EOF
+
+# Shared QtSvg against the install above.
+FROM base AS qtsvg
+COPY --from=qt-src /usr/src/qt6-src /usr/src/qt6-src
+COPY --from=qt /opt/qt /opt/qt
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+cmake -S /usr/src/qt6-src/6.10.3/Src/qtsvg -B /tmp/qtsvg-build \
+    -DCMAKE_PREFIX_PATH=/opt/qt -DBUILD_SHARED_LIBS=ON
+cmake --build /tmp/qtsvg-build --parallel "$(nproc)"
+cmake --install /tmp/qtsvg-build --prefix /opt/qt
+rm -rf /tmp/qtsvg-build /usr/src/qt6-src
+EOF
+
+# Static yaml-cpp (settings file): no extra .so for linuxdeploy.
+FROM base AS yaml
+RUN <<EOF
+curl -sSL -o /tmp/yaml-cpp.tar.gz \
+    https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.9.0.tar.gz
+mkdir -p /usr/src/yaml-cpp && tar xzf /tmp/yaml-cpp.tar.gz \
+    -C /usr/src/yaml-cpp --strip-components=1
+cmake -S /usr/src/yaml-cpp -B /tmp/yaml-build \
+    -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF \
+    -DYAML_CPP_BUILD_CONTRIB=OFF -DBUILD_SHARED_LIBS=OFF \
+    -DCMAKE_INSTALL_PREFIX=/opt/yaml-cpp-app
+cmake --build /tmp/yaml-build
+cmake --install /tmp/yaml-build
+rm -rf /tmp/yaml-build /tmp/yaml-cpp.tar.gz /usr/src/yaml-cpp
+EOF
+
+# Shared QtWayland (client lib the QPA wayland plugin links; the
+# compositor module builds along, unused) against the install above.
+FROM base AS wayland
+COPY --from=qt-src /usr/src/qt6-src /usr/src/qt6-src
+COPY --from=qtsvg /opt/qt /opt/qt
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+cmake -S /usr/src/qt6-src/6.10.3/Src/qtwayland -B /tmp/wayland-build \
+    -DCMAKE_PREFIX_PATH=/opt/qt -DBUILD_SHARED_LIBS=ON
+cmake --build /tmp/wayland-build --parallel "$(nproc)"
+cmake --install /tmp/wayland-build --prefix /opt/qt
+rm -rf /tmp/wayland-build /usr/src/qt6-src
+EOF
+
+FROM base AS final
+COPY --from=wayland /opt/qt /opt/qt
+COPY --from=yaml /opt/yaml-cpp-app /opt/yaml-cpp-app
+
+# linuxdeploy + plugins, extracted once at build time (AppRun
+# --appimage-extract needs no FUSE). Deploys then run offline.
+ARG LINUXDEPLOY_VER=continuous
+RUN <<EOF
+mkdir -p /opt/linuxdeploy
+cd /tmp
+for spec in \
+    "linuxdeploy/linuxdeploy:linuxdeploy-x86_64.AppImage" \
+    "linuxdeploy/linuxdeploy-plugin-qt:linuxdeploy-plugin-qt-x86_64.AppImage" \
+    "linuxdeploy/linuxdeploy-plugin-appimage:linuxdeploy-plugin-appimage-x86_64.AppImage" \
+; do
+    repo="${spec%%:*}"
+    file="${spec##*:}"
+    name="${file%.AppImage}"
+    curl -fSL "https://github.com/${repo}/releases/download/${LINUXDEPLOY_VER}/${file}" -o "/tmp/${name}.AppImage"
+    chmod +x "/tmp/${name}.AppImage"
+    rm -rf squashfs-root
+    "/tmp/${name}.AppImage" --appimage-extract >/dev/null
+    rm -rf "/opt/linuxdeploy/${name}"
+    mv squashfs-root "/opt/linuxdeploy/${name}"
+    rm -f "/tmp/${name}.AppImage"
+done
+EOF
+
+ENV QMAKE=/opt/qt/bin/qmake
+ENV NO_STRIP=1
+ENV LINUXDEPLOY_DIR=/opt/linuxdeploy
+COPY frontends/qt/packaging/docker/appimage-deploy.sh /usr/local/bin/appimage-deploy
+RUN chmod +x /usr/local/bin/appimage-deploy
+WORKDIR /work

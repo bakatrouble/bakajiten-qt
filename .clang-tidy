@@ -1,0 +1,10 @@
+Checks: '-*,bugprone-*,clang-analyzer-*,performance-*,modernize-use-nullptr,modernize-use-override,modernize-use-using'
+WarningsAsErrors: '*'
+CheckOptions: []
+# NOTE: misc-include-cleaner was tried and reverted: it cannot see
+# Qt macros/typedefs (emit, qMax, quint64, qInfo, Q_UNUSED) or some
+# classes (QStringList, QVector) under any header, and it attributes
+# shared headers per-TU (an include required by one includer reads
+# as unused from another), so no tree state satisfies it. The TUs
+# were still given their direct includes (see the per-file pass);
+# clangd below keeps the check as a non-blocking inline signal.

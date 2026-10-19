@@ -1,0 +1,25 @@
+# C++ style: 4-space indent, access modifiers flush left, function
+# braces broken (control statements attached), pointers/references
+# right-aligned. ColumnLimit 100 matches the longest existing line.
+BasedOnStyle: LLVM
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+IndentWidth: 4
+AccessModifierOffset: -4
+ColumnLimit: 100
+PointerAlignment: Right
+ReferenceAlignment: Right
+DerivePointerAlignment: false
+SortIncludes: CaseSensitive
+FixNamespaceComments: true
+NamespaceIndentation: None

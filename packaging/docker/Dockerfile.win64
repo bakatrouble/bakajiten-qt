@@ -1,0 +1,121 @@
+# syntax=docker/dockerfile:1
+
+# Windows cross image for bakajiten: Fedora MinGW stack (kept on
+# Fedora, not Rocky — MinGW freshness matters here, unlike the
+# glibc floor), self-built static Qt 6.10.3 (single-exe target),
+# static yaml-cpp, Rust + UniFFI generator. No shared MinGW Qt on
+# purpose: the app links everything statically (see cmake/app.cmake).
+#
+# Stages split so later edits never rebuild Qt: sources, qtbase,
+# qtsvg, and yaml-cpp each cache independently.
+#
+# Local build (Qt takes ~40-60 min, cached in its own layer):
+#   docker build -f frontends/qt/packaging/docker/Dockerfile.win64 -t bakajiten-cross:win64 .
+FROM fedora:43 AS base
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+RUN --mount=type=cache,target=/var/cache/dnf <<EOF
+dnf install -y \
+    mingw64-gcc-c++ \
+    mingw64-zlib-static \
+    ccache \
+    qt6-qtbase-devel \
+    qt6-qttools-devel \
+    cmake ninja-build git curl pkg-config python3-pip \
+&& dnf clean all
+EOF
+
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV CMAKE_GENERATOR=Ninja
+RUN --mount=type=cache,target=/opt/cargo/registry <<EOF
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal
+rustup target add x86_64-pc-windows-gnu
+cargo install uniffi-bindgen-cpp \
+    --git https://github.com/NordSecurity/uniffi-bindgen-cpp \
+    --tag v0.10.0+v0.31.0
+EOF
+WORKDIR /work
+
+# Qt sources alone (re-fetched only when the archive set changes).
+FROM base AS qt-src
+COPY frontends/qt/packaging/docker/qt-toolchain.cmake /opt/toolchain/qt-toolchain.cmake
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+pip install --break-system-packages aqtinstall==3.3.0 fonttools
+aqt install-src windows 6.10.3 \
+    -O /usr/src/qt6-static-src --archives qtbase qtsvg
+EOF
+
+# Static Qt for Windows: host tools (moc/uic/rcc) come from the
+# Fedora Qt via -qt-host-path; only the windows QPA backend is
+# built (-qpa windows keeps host Wayland libs out of the plugin
+# set, where they break downstream find_package). -system-zlib
+# (static mingw libz.a, pinned below): a bundled copy would
+# duplicate the zlib the app itself links.
+FROM base AS qtbase
+COPY --from=qt-src /usr/src/qt6-static-src /usr/src/qt6-static-src
+COPY frontends/qt/packaging/docker/qt-toolchain.cmake /opt/toolchain/qt-toolchain.cmake
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+mkdir -p /tmp/qt6-static-build && cd /tmp/qt6-static-build
+/usr/src/qt6-static-src/6.10.3/Src/qtbase/configure \
+    -static -release -prefix /opt/qt6-static \
+    -opensource -confirm-license \
+    -nomake tests -nomake examples \
+    -no-warnings-are-errors -no-vulkan -qpa windows \
+    -system-zlib \
+    -qt-host-path /usr \
+    -- -DCMAKE_TOOLCHAIN_FILE=/opt/toolchain/qt-toolchain.cmake \
+       -DQt6HostInfo_DIR=/usr/lib64/cmake/Qt6HostInfo \
+       -DZLIB_INCLUDE_DIR=/usr/x86_64-w64-mingw32/sys-root/mingw/include \
+       -DZLIB_LIBRARY=/usr/x86_64-w64-mingw32/sys-root/mingw/lib/libz.a \
+       -DZLIB_LIBRARY_RELEASE=/usr/x86_64-w64-mingw32/sys-root/mingw/lib/libz.a
+cmake --build . --parallel "$(nproc)"
+cmake --install .
+rm -rf /tmp/qt6-static-build
+EOF
+
+# Static QtSvg against the base install above.
+FROM base AS qtsvg
+COPY --from=qt-src /usr/src/qt6-static-src /usr/src/qt6-static-src
+COPY --from=qtbase /opt/qt6-static /opt/qt6-static
+COPY frontends/qt/packaging/docker/win64-toolchain.cmake /opt/toolchain/win64-toolchain.cmake
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+cmake -S /usr/src/qt6-static-src/6.10.3/Src/qtsvg -B /tmp/qtsvg-static-build -G Ninja \
+    --toolchain /opt/toolchain/win64-toolchain.cmake \
+    -DCMAKE_PREFIX_PATH=/opt/qt6-static -DBUILD_SHARED_LIBS=OFF \
+    -DQt6HostInfo_DIR=/usr/lib64/cmake/Qt6HostInfo
+cmake --build /tmp/qtsvg-static-build --parallel "$(nproc)"
+cmake --install /tmp/qtsvg-static-build --prefix /opt/qt6-static
+rm -rf /tmp/qtsvg-static-build
+EOF
+
+# Static yaml-cpp (settings file) for the Windows target.
+FROM base AS yaml
+COPY frontends/qt/packaging/docker/win64-toolchain.cmake /opt/toolchain/win64-toolchain.cmake
+RUN <<EOF
+curl -sSL -o /tmp/yaml-cpp.tar.gz \
+    https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.9.0.tar.gz
+mkdir -p /usr/src/yaml-cpp && tar xzf /tmp/yaml-cpp.tar.gz \
+    -C /usr/src/yaml-cpp --strip-components=1
+cmake -S /usr/src/yaml-cpp -B /tmp/yaml-build \
+    --toolchain /opt/toolchain/win64-toolchain.cmake \
+    -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF \
+    -DYAML_CPP_BUILD_CONTRIB=OFF -DBUILD_SHARED_LIBS=OFF \
+    -DCMAKE_INSTALL_PREFIX=/opt/yaml-cpp-win
+cmake --build /tmp/yaml-build
+cmake --install /tmp/yaml-build
+rm -rf /tmp/yaml-build /tmp/yaml-cpp.tar.gz /usr/src/yaml-cpp
+EOF
+
+FROM base AS final
+COPY --from=qtsvg /opt/qt6-static /opt/qt6-static
+COPY --from=yaml /opt/yaml-cpp-win /opt/yaml-cpp-win
+COPY frontends/qt/packaging/docker/win64-toolchain.cmake /opt/toolchain/win64-toolchain.cmake
+# OFL text for the embedded CJK fallback (Noto Sans JP, compiled
+# in via BAKAJITEN_BUNDLE_CJK_FONT): the license still ships next to
+# the binary.
+RUN <<EOF
+mkdir -p /opt/fonts
+curl -fSL -o /opt/fonts/OFL.txt \
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/OFL.txt"
+EOF

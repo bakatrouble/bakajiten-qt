@@ -1,0 +1,168 @@
+# syntax=docker/dockerfile:1
+
+# Static Qt 6.10.3 for Linux (single-binary target), static
+# yaml-cpp, Rust + UniFFI generator. The app links Qt statically
+# and the system glibc/XCB dynamically, so one file runs anywhere
+# with a compatible libc (unlike Windows, no `-static` link —
+# fully static glibc breaks DNS/TLS at runtime).
+#
+# Rocky Linux 8 base (glibc 2.28) like Telegram's centos_env: the
+# binary's libc floor is the build image's, so old distros stay
+# runnable. Modern compiler via gcc-toolset-15 (release builds
+# never touch P2996 reflection — GCC 16 is a dev-loader-only
+# requirement). ccache + cache mounts keep rebuilds fast.
+#
+# Stages split so later edits never rebuild Qt: sources, qtbase,
+# qtsvg, qtwayland, and yaml-cpp each cache independently.
+#
+# Local build (Qt takes ~40-60 min, cached in its own layer):
+#   docker build -f frontends/qt/packaging/docker/Dockerfile.linux-static -t bakajiten-cross:linux-static .
+FROM rockylinux:8 AS base
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+ENV TOOLSET=gcc-toolset-15
+ENV PATH=/opt/rh/$TOOLSET/root/usr/bin:$PATH
+ENV LD_LIBRARY_PATH=/opt/rh/$TOOLSET/root/usr/lib64:/opt/rh/$TOOLSET/root/usr/lib:/usr/lib64:/usr/lib
+ENV PKG_CONFIG_PATH=/opt/rh/$TOOLSET/root/usr/lib64/pkgconfig:/opt/rh/$TOOLSET/root/usr/lib/pkgconfig:/usr/lib64/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+# Plain names on the default PATH: cargo/ccache resolve `cc`/`gcc`
+# without depending on the toolset PATH above.
+RUN ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/gcc /usr/local/bin/gcc \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/g++ /usr/local/bin/g++ \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/cc /usr/local/bin/cc \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/c++ /usr/local/bin/c++ \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/ar /usr/local/bin/ar \
+ && ln -sf /opt/rh/gcc-toolset-15/root/usr/bin/ranlib /usr/local/bin/ranlib
+
+RUN --mount=type=cache,target=/var/cache/dnf <<EOF
+dnf -y install epel-release
+dnf -y install dnf-plugins-core
+dnf config-manager --set-enabled powertools
+dnf -y install cmake ninja-build git curl pkg-config perl tar gzip file \
+    python3.11-pip \
+    fontconfig-devel freetype-devel \
+    libxcb-devel libX11-devel libXi-devel \
+    xcb-util-wm-devel xcb-util-image-devel xcb-util-keysyms-devel \
+    xcb-util-renderutil-devel xcb-util-cursor-devel xcb-util-devel \
+    libXrender-devel libXrandr-devel \
+    libXcursor-devel dbus-devel libxkbcommon-devel libxkbcommon-x11-devel \
+    wayland-devel wayland-protocols-devel \
+    zlib-devel \
+    ccache $TOOLSET-gcc $TOOLSET-gcc-c++ $TOOLSET-binutils
+alternatives --set python3 /usr/bin/python3.11
+# Rocky CMake (3.26) predates CXX_STANDARD 26 and its ninja is
+# too old for Qt 6.10's build files: pip's are current.
+python3 -m pip install cmake ninja
+EOF
+
+ENV CC="gcc"
+ENV CXX="g++"
+ENV CCACHE_DIR=/var/cache/ccache
+ENV CCACHE_MAXSIZE=10G
+ENV CMAKE_GENERATOR=Ninja
+
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN --mount=type=cache,target=/opt/cargo/registry <<EOF
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal \
+&& cargo install uniffi-bindgen-cpp \
+    --git https://github.com/NordSecurity/uniffi-bindgen-cpp \
+    --tag v0.10.0+v0.31.0
+EOF
+WORKDIR /work
+
+# Qt sources alone (re-fetched only when the archive set changes).
+FROM base AS qt-src
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+python3 -m pip install aqtinstall==3.3.0
+aqt install-src linux 6.10.3 \
+    -O /usr/src/qt6-static-src --archives qtbase qtsvg qtwayland
+EOF
+
+# Static OpenSSL 3.5 LTS (self-contained TLS for the static Qt:
+# the system libssl is 1.1-only and missing on newer distros, so
+# the TLS backend links statically instead of using it).
+FROM base AS openssl
+RUN --mount=type=cache,target=/tmp/dl <<EOF
+curl -sSL -o /tmp/openssl.tar.gz \
+    https://www.openssl.org/source/openssl-3.5.9.tar.gz
+echo '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  /tmp/openssl.tar.gz' \
+    | sha256sum -c -
+mkdir -p /usr/src/openssl && tar xzf /tmp/openssl.tar.gz \
+    -C /usr/src/openssl --strip-components=1
+cd /usr/src/openssl
+perl Configure no-shared --prefix=/opt/openssl --openssldir=/etc/ssl linux-x86_64
+make -j"$(nproc)"
+make install_sw
+rm -rf /usr/src/openssl /tmp/openssl.tar.gz
+EOF
+
+# Static Qt base (host moc/uic/rcc build from this same source —
+# no separate host Qt needed); only the xcb backend is kept.
+# -system-zlib: a bundled copy would duplicate the zlib the app
+# itself links (shared libz here, matching the system-libs model).
+# -openssl-linked: same story for TLS (static OpenSSL above —
+# the system libssl is 1.1, absent on newer distros).
+FROM base AS qtbase
+COPY --from=qt-src /usr/src/qt6-static-src /usr/src/qt6-static-src
+COPY --from=openssl /opt/openssl /opt/openssl
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+mkdir -p /tmp/qt6-static-build && cd /tmp/qt6-static-build
+/usr/src/qt6-static-src/6.10.3/Src/qtbase/configure \
+    -static -release -prefix /opt/qt6-static \
+    -opensource -confirm-license \
+    -nomake tests -nomake examples \
+    -no-warnings-are-errors -no-vulkan -no-opengl \
+    -system-zlib \
+    -openssl-linked \
+    -- -DOPENSSL_ROOT_DIR=/opt/openssl \
+&& cmake --build . --parallel "$(nproc)" \
+&& cmake --install . \
+&& rm -rf /tmp/qt6-static-build
+EOF
+
+# Static QtSvg against the base install above.
+FROM base AS qtsvg
+COPY --from=qt-src /usr/src/qt6-static-src /usr/src/qt6-static-src
+COPY --from=qtbase /opt/qt6-static /opt/qt6-static
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+cmake -S /usr/src/qt6-static-src/6.10.3/Src/qtsvg -B /tmp/qtsvg-static-build \
+    -DCMAKE_PREFIX_PATH=/opt/qt6-static -DBUILD_SHARED_LIBS=OFF
+cmake --build /tmp/qtsvg-static-build --parallel "$(nproc)"
+cmake --install /tmp/qtsvg-static-build --prefix /opt/qt6-static
+rm -rf /tmp/qtsvg-static-build /usr/src/qt6-static-src
+EOF
+
+# Static yaml-cpp (settings file).
+FROM base AS yaml
+RUN <<EOF
+curl -sSL -o /tmp/yaml-cpp.tar.gz \
+    https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.9.0.tar.gz
+mkdir -p /usr/src/yaml-cpp && tar xzf /tmp/yaml-cpp.tar.gz \
+    -C /usr/src/yaml-cpp --strip-components=1
+cmake -S /usr/src/yaml-cpp -B /tmp/yaml-build \
+    -DYAML_CPP_BUILD_TESTS=OFF -DYAML_CPP_BUILD_TOOLS=OFF \
+    -DYAML_CPP_BUILD_CONTRIB=OFF -DBUILD_SHARED_LIBS=OFF \
+    -DCMAKE_INSTALL_PREFIX=/opt/yaml-cpp-linux
+cmake --build /tmp/yaml-build
+cmake --install /tmp/yaml-build
+rm -rf /tmp/yaml-build /tmp/yaml-cpp.tar.gz /usr/src/yaml-cpp
+EOF
+
+# Static QtWayland (client plugin for Wayland sessions, compositor
+# unused) against the installs above. Chain: this stage's
+# /opt/qt6-static accumulates qtbase + qtsvg + qtwayland.
+FROM base AS wayland
+COPY --from=qt-src /usr/src/qt6-static-src /usr/src/qt6-static-src
+COPY --from=qtsvg /opt/qt6-static /opt/qt6-static
+RUN --mount=type=cache,target=/var/cache/ccache <<EOF
+cmake -S /usr/src/qt6-static-src/6.10.3/Src/qtwayland -B /tmp/wayland-static-build \
+    -DCMAKE_PREFIX_PATH=/opt/qt6-static -DBUILD_SHARED_LIBS=OFF
+cmake --build /tmp/wayland-static-build --parallel "$(nproc)"
+cmake --install /tmp/wayland-static-build --prefix /opt/qt6-static
+rm -rf /tmp/wayland-static-build /usr/src/qt6-static-src
+EOF
+
+FROM base AS final
+COPY --from=wayland /opt/qt6-static /opt/qt6-static
+COPY --from=yaml /opt/yaml-cpp-linux /opt/yaml-cpp-linux
+COPY --from=openssl /opt/openssl /opt/openssl
