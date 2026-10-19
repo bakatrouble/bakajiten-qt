@@ -16,7 +16,7 @@
 
 cmake_minimum_required(VERSION 3.24)
 
-project(bakajiten_qt VERSION 0.1.0)
+project(bakajiten_qt VERSION 0.1.1)
 
 # Position matters: the Makefile generator snapshots this when each
 # target is created, so it must precede every add_executable below

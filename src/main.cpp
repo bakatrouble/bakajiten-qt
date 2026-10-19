@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setOrganizationName(QStringLiteral("bakajiten"));
     QCoreApplication::setApplicationName(QStringLiteral("bakajiten"));
     // Shown in Help → About; keep in sync with project() VERSION.
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.1"));
     // Persisted appearance before any widget exists (cleanest
     // polish). The OS style is captured first so the settings
     // Default entry can name it.
