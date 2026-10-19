@@ -42,6 +42,7 @@ add_executable(bakajiten
     src/core/dictionary/DictionaryModel.cpp
     src/core/dictionary/DictionaryModelDisplay.cpp
     src/util/Furigana.cpp
+    src/util/Archive.cpp
     src/widgets/input/KanaInput.cpp
     src/core/dictionary/MeaningBuilder.cpp
     src/widgets/table/DictionaryTableColors.cpp
@@ -53,6 +54,7 @@ add_executable(bakajiten
     src/widgets/tooltip/KanjiHoverHit.cpp
     src/ui/kanji/KanjiDialog.cpp
     src/ui/update/UpdateChecker.cpp
+    src/ui/update/UpdateInstaller.cpp
     src/ui/update/UpdatePrompt.cpp
     src/ui/update/UpdateProgress.cpp
     src/ui/data/DataChecker.cpp
@@ -134,8 +136,9 @@ if(BAKAJITEN_BUNDLE_CJK_FONT)
         "<RCC>\n    <qresource prefix=\"/fonts\">\n        <file>NotoSansJP.ttf</file>\n    </qresource>\n</RCC>\n")
     target_sources(bakajiten PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/fonts/fonts.qrc")
 endif()
-# Update artifact kind (win64 .exe vs AppImage): which release asset
-# counts as this build's update. Empty disables update checks.
+# Update artifact kind: which release asset counts as this
+# build's update (win64 zip, AppImage, linux-static tarball,
+# macos-arm64/macos-x64 zips). Empty disables update checks.
 set(BAKAJITEN_UPDATE_ARTIFACT "" CACHE STRING "Update artifact kind")
 target_compile_definitions(bakajiten PRIVATE "BAKAJITEN_UPDATE_ARTIFACT=\"${BAKAJITEN_UPDATE_ARTIFACT}\"")
 # Static Qt links no platform plugin DLL: import the platform

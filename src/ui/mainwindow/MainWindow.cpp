@@ -20,6 +20,7 @@
 #include "ui/recognizer/RecognizerWidget.h"
 #include "ui/settings/SettingsDialog.h"
 #include "ui/update/UpdateChecker.h"
+#include "ui/update/UpdateInstaller.h"
 #include "ui/update/UpdateProgress.h"
 #include "ui/update/UpdatePrompt.h"
 
@@ -303,14 +304,23 @@ void MainWindow::onUpdateFailed(const QString &reason) {
 }
 
 void MainWindow::onDownloadFinished(const QString &path) {
+    UpdateInstaller::Plan install;
+    QString reason;
+    if (!UpdateInstaller::plan(path, install, reason)) {
+        QMessageBox::warning(this, tr("Update failed"), reason);
+        return;
+    }
     const auto answer = QMessageBox::question(
-        this, tr("Update downloaded"), tr("The update is ready. Restart now to switch to it?"));
+        this, tr("Update downloaded"),
+        install.replacesRunning ? tr("The update is installed. Restart now to switch to it?")
+                                : tr("The update is ready (%1). Restart now to switch to it?")
+                                      .arg(install.installedPath));
     if (answer != QMessageBox::Yes) {
         return;
     }
-    // Hand off to the new binary, then quit (the old file stays put;
-    // nothing is overwritten while running).
-    QProcess::startDetached(path, {});
+    // Hand off to the installed binary (Unix) or the swap helper
+    // (Windows), then quit.
+    QProcess::startDetached(install.program, install.arguments);
     QApplication::quit();
 }
 

@@ -52,6 +52,7 @@ if(BUILD_QT_TESTS)
         src/core/dictionary/DictionaryModel.cpp
         src/core/dictionary/DictionaryModelDisplay.cpp
         src/util/Furigana.cpp
+        src/util/Archive.cpp
         src/widgets/input/KanaInput.cpp
         src/core/dictionary/MeaningBuilder.cpp
         src/widgets/table/DictionaryTableColors.cpp
@@ -64,6 +65,7 @@ if(BUILD_QT_TESTS)
         resources/icons.qrc
         src/ui/kanji/KanjiDialog.cpp
         src/ui/update/UpdateChecker.cpp
+        src/ui/update/UpdateInstaller.cpp
         src/ui/update/UpdatePrompt.cpp
         src/ui/update/UpdateProgress.cpp
         src/ui/data/DataChecker.cpp

@@ -27,6 +27,10 @@ private slots:
     void helpMenuShowsAboutQt();
     void updaterVersionCompare();
     void updaterAssetMatch();
+    void updaterInstallerKind();
+    void updaterSwapScript();
+    void updaterArchiveZip();
+    void updaterArchiveTarGz();
     void updaterPromptSkip();
     void updaterProgressFormat();
     void updaterSkipPersists();
