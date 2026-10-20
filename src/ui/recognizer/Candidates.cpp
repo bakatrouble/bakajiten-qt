@@ -42,6 +42,17 @@ void RecognizerWidget::updateStatus() {
 }
 
 void RecognizerWidget::onRecognize() {
+    if (strokes.isEmpty()) {
+        // Nothing to score: keep the strip empty instead of showing
+        // empty-input kana hits (kana toggle / undo-to-empty with a
+        // bare canvas). Bumping the generation drops in-flight
+        // replies that would repopulate it.
+        ++matchGeneration;
+        ui->candidatesList->clear();
+        matchMs = -1.0;
+        updateStatus();
+        return;
+    }
     // Score on the match thread; the id lets the reply prove it is
     // still current (a newer stroke invalidates anything in flight).
     ++matchGeneration;

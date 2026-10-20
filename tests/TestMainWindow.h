@@ -34,6 +34,7 @@ private slots:
     void updaterPromptSkip();
     void updaterProgressFormat();
     void updaterSkipPersists();
+    void updaterLaterSuppressesSession();
     void fadesFollowScrollability();
     void queryTimeShownAfterStroke();
     void candidateScriptColors();
@@ -45,6 +46,7 @@ private slots:
     void kanaInputSearchesConverted();
     void kanaInputModalWhilePending();
     void kanaInputPartialMoraSkipsSearch();
+    void kanaInputReplacesSelection();
     void kanjiDialogOpensFromTable();
     void kanjiDialogOpensFromArticle();
     void kanjiDialogIgnoresKana();

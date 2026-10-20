@@ -99,6 +99,9 @@ private:
     /// opt-out stays off. Manual checks run on demand instead.
     UpdateChecker *updateChecker = nullptr;
     QTimer *updateTimer = nullptr;
+    /// "Later"/Close without the skip box silences that version
+    /// until relaunch (never persisted, unlike the skip box).
+    QString updateLaterVersion;
     /// Dev-only (null in release): .ui watcher + reload debounce.
     QFileSystemWatcher *uiWatcher = nullptr;
     QTimer *uiReloadTimer = nullptr;

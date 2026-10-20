@@ -122,8 +122,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(updateChecker, &UpdateChecker::noArtifact, this, &MainWindow::onUpdateNoArtifact);
     connect(updateChecker, &UpdateChecker::upToDate, this, &MainWindow::onUpdateUpToDate);
     connect(updateChecker, &UpdateChecker::checkFailed, this, &MainWindow::onUpdateFailed);
-    connect(ui->actionCheckUpdates, &QAction::triggered, this,
-            [this] { updateChecker->check(true); });
+    connect(ui->actionCheckUpdates, &QAction::triggered, this, [this] {
+        // Explicit request: re-arm the session dismissal first.
+        updateLaterVersion.clear();
+        updateChecker->check(true);
+    });
     connect(ui->actionDictionaries, &QAction::triggered, this, [this] { openDictionaries(); });
     updateTimer = new QTimer(this);
     updateTimer->setInterval(3600 * 1000);
@@ -269,10 +272,16 @@ bool MainWindow::applyAppearance(const AppSettings &selected) {
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void MainWindow::onUpdateFound(const QString &version, const QString &notes, const QString &asset,
                                const QString &url, qint64 size) {
+    if (!updateLaterVersion.isEmpty() && updateLaterVersion == version) {
+        // "Later" this session: nag again only after relaunch.
+        return;
+    }
     UpdatePrompt prompt(version, notes, true, this);
     if (prompt.exec() != QDialog::Accepted) {
         if (prompt.skipVersion()) {
             MemorizedState::setSkippedUpdateVersion(version);
+        } else {
+            updateLaterVersion = version;
         }
         return;
     }
@@ -286,10 +295,15 @@ void MainWindow::onUpdateFound(const QString &version, const QString &notes, con
 }
 
 void MainWindow::onUpdateNoArtifact(const QString &version, const QString &notes) {
+    if (!updateLaterVersion.isEmpty() && updateLaterVersion == version) {
+        return;
+    }
     UpdatePrompt prompt(version, notes, false, this);
     prompt.exec();
     if (prompt.skipVersion()) {
         MemorizedState::setSkippedUpdateVersion(version);
+    } else {
+        updateLaterVersion = version;
     }
 }
 

@@ -70,15 +70,25 @@ bool KanaInput::eventFilter(QObject *watched, QEvent *event) {
     if (raw.isEmpty()) {
         raw = field->text();
     }
+    const QString pressed = key->text();
+    const bool ascii = pressed.size() == 1 && pressed.at(0).unicode() < 128;
+    const bool convertible = ascii && (pressed.at(0).isLetter() || pressed.at(0) == u'-');
+    if (!hasPending() && field->hasSelectedText() &&
+        (convertible || key->key() == Qt::Key_Backspace)) {
+        // Selection replace: drop the selection first (the buffer
+        // re-syncs from the field text); typing then converts when
+        // the cursor lands at the end, backspace is done already.
+        field->del();
+        if (key->key() == Qt::Key_Backspace) {
+            return true;
+        }
+    }
     if (key->key() == Qt::Key_Backspace) {
         // Default handling: backspace deletes the last display
         // character whole — never un-converts kana back to romaji
         // — and the buffer re-syncs from the field text below.
         return QObject::eventFilter(watched, event);
     }
-    const QString pressed = key->text();
-    const bool ascii = pressed.size() == 1 && pressed.at(0).unicode() < 128;
-    const bool convertible = ascii && (pressed.at(0).isLetter() || pressed.at(0) == u'-');
     if (convertible && atEnd()) {
         raw += pressed.toLower();
         render();

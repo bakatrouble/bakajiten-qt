@@ -276,8 +276,6 @@ void KanjiDialog::setCharacter(const QString &ch) {
     row(tr("Four corner:"), joinedOrDash(card.fourCorner, QStringLiteral(", ")));
     row(tr("De Roo:"), joinedOrDash(card.deroo, QStringLiteral(", ")));
     row(tr("SH:"), joinedOrDash(card.shDesc, QStringLiteral(", ")));
-    row(tr("Grade:"), gradeText);
-    row(tr("JLPT:"), jlptText);
     row(tr("Nelson:"), joinedOrDash(card.nelsonC, QStringLiteral(", ")));
     row(tr("NJECD:"), joinedOrDash(card.njecd, QStringLiteral(", ")));
     row(tr("O'Neill:"), joinedOrDash(card.oneill, QStringLiteral(", ")));

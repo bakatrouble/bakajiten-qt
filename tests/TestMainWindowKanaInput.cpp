@@ -103,6 +103,39 @@ void TestMainWindow::kanaInputModalWhilePending() {
     QCOMPARE(input->text(), QStringLiteral("な"));
 }
 
+void TestMainWindow::kanaInputReplacesSelection() {
+    // Typing over a selection replaces it and converts: the
+    // selection drops first, then the keystroke takes the normal
+    // end-of-text conversion path. Backspace over a selection
+    // clears the range whole.
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *input = window->findChild<QLineEdit *>("searchInput");
+    QVERIFY2(input != nullptr, "search input missing");
+    input->clear();
+    QTest::keyClicks(input, "taberu");
+    QCOMPARE(input->text(), QStringLiteral("たべる"));
+    input->selectAll();
+    QTest::keyClick(input, Qt::Key_A);
+    QCOMPARE(input->text(), QStringLiteral("あ"));
+    // Backspace over a selection clears it whole.
+    input->clear();
+    QTest::keyClicks(input, "kata");
+    QCOMPARE(input->text(), QStringLiteral("かた"));
+    input->setSelection(0, 1);
+    QTest::keyClick(input, Qt::Key_Backspace);
+    QCOMPARE(input->text(), QStringLiteral("た"));
+    // Mid-text selection replace converts at the end, like typing
+    // at the end after deleting.
+    input->selectAll();
+    QTest::keyClick(input, Qt::Key_Backspace);
+    QCOMPARE(input->text(), QString());
+    QTest::keyClicks(input, "kata");
+    input->setSelection(1, 1);
+    QTest::keyClick(input, Qt::Key_K);
+    QCOMPARE(input->text(), QStringLiteral("かk"));
+}
+
 void TestMainWindow::kanaInputPartialMoraSkipsSearch() {
     // A partial mora never fires a search (batch conversion would
     // misread たn as たん): the spy stays quiet past the debounce,

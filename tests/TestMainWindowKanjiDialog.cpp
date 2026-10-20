@@ -196,6 +196,9 @@ void TestMainWindow::kanjiDialogShowsFullDetail() {
           "De Roo refs: ", "SH refs: "}) {
         QVERIFY2(text.contains(QString::fromLatin1(caption)), "detail row missing");
     }
+    // Grade/JLPT appear exactly once (no duplicated rows).
+    QCOMPARE(text.count(QStringLiteral("Grade: ")), 1);
+    QCOMPARE(text.count(QStringLiteral("JLPT: ")), 1);
     // Spot values from packed kanjidic2: SKIP `n-nn-nn` shape,
     // news frequency rank present, Chinese in marked pinyin
     // (shì, not shi4).

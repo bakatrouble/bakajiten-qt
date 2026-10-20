@@ -354,6 +354,80 @@ void TestMainWindow::updaterProgressFormat() {
     QVERIFY2(progress.findChild<QProgressBar *>() != nullptr, "bar missing");
 }
 
+void TestMainWindow::updaterLaterSuppressesSession() {
+    // "Later" (reject without the skip box) silences that version
+    // for this process; a fresh window (relaunch) prompts again.
+    // Suite state is shared, so the skip box stays untouched.
+    MemorizedState::setSkippedUpdateVersion(QString());
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *checker = window->findChild<UpdateChecker *>();
+    QVERIFY2(checker != nullptr, "checker missing");
+    const QString version = QStringLiteral("0.2.0");
+    const QString asset = QStringLiteral("x.AppImage");
+    const QString url = QStringLiteral("https://example.invalid/x");
+
+    // First sighting: answer Later.
+    bool sawFirst = false;
+    QTimer::singleShot(500, [&] {
+        auto *prompt = qobject_cast<UpdatePrompt *>(QApplication::activeModalWidget());
+        if (prompt == nullptr) {
+            return;
+        }
+        sawFirst = true;
+        auto *buttons = prompt->findChild<QDialogButtonBox *>();
+        QPushButton *later = nullptr;
+        if (buttons != nullptr) {
+            for (auto *button : buttons->buttons()) {
+                if (button->text() == QStringLiteral("Later")) {
+                    later = qobject_cast<QPushButton *>(button);
+                }
+            }
+        }
+        if (later != nullptr) {
+            QTest::mouseClick(later, Qt::LeftButton);
+        } else {
+            prompt->reject();
+        }
+    });
+    checker->updateFound(version, QStringLiteral("notes"), asset, url, 100);
+    QVERIFY2(sawFirst, "first prompt never showed");
+    QVERIFY(MemorizedState::skippedUpdateVersion().isEmpty());
+
+    // Second sighting, same session: no prompt.
+    bool sawSecond = false;
+    QTimer::singleShot(500, [&] {
+        auto *prompt = qobject_cast<UpdatePrompt *>(QApplication::activeModalWidget());
+        if (prompt == nullptr) {
+            return;
+        }
+        sawSecond = true;
+        prompt->reject();
+    });
+    checker->updateFound(version, QStringLiteral("notes"), asset, url, 100);
+    // No modal means no event loop ran: pump once so the probe
+    // timer above fires (and is consumed) before moving on.
+    QTest::qWait(700);
+    QVERIFY2(!sawSecond, "Later did not silence the session");
+
+    // Relaunch equivalent: a fresh window prompts again.
+    std::unique_ptr<MainWindow> relaunched(openWindow());
+    QVERIFY2(relaunched != nullptr, "window never exposed");
+    auto *freshChecker = relaunched->findChild<UpdateChecker *>();
+    QVERIFY2(freshChecker != nullptr, "checker missing");
+    bool sawRelaunch = false;
+    QTimer::singleShot(500, [&] {
+        auto *prompt = qobject_cast<UpdatePrompt *>(QApplication::activeModalWidget());
+        if (prompt == nullptr) {
+            return;
+        }
+        sawRelaunch = true;
+        prompt->reject();
+    });
+    freshChecker->updateFound(version, QStringLiteral("notes"), asset, url, 100);
+    QVERIFY2(sawRelaunch, "relaunch did not re-arm the prompt");
+}
+
 void TestMainWindow::updaterSkipPersists() {
     // The per-version opt-out round-trips through state.yaml;
     // suite state is shared, so it resets on the way out.
