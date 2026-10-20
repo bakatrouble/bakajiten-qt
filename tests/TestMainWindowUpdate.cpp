@@ -36,25 +36,30 @@ void TestMainWindow::updaterVersionCompare() {
 
 void TestMainWindow::updaterAssetMatch() {
     // Artifact kind picks the release asset by suffix.
-    const QStringList names = {
-        QStringLiteral("Bakajiten-x86_64.AppImage"), QStringLiteral("bakajiten-win64-v0.1.0.zip"),
-        QStringLiteral("bakajiten-linux64-static.tar.gz"), QStringLiteral("SHASUMS.txt")};
+    const QStringList names = {QStringLiteral("bakajiten-linux-x86_64-appimage.AppImage"),
+                               QStringLiteral("bakajiten-win-x86_64.zip"),
+                               QStringLiteral("bakajiten-linux-x86_64-static.tar.gz"),
+                               QStringLiteral("SHASUMS.txt")};
     QCOMPARE(UpdateChecker::matchedAsset(names, QStringLiteral("appimage")),
-             QStringLiteral("Bakajiten-x86_64.AppImage"));
+             QStringLiteral("bakajiten-linux-x86_64-appimage.AppImage"));
     QCOMPARE(
         UpdateChecker::matchedAsset({QStringLiteral("bakajiten.exe")}, QStringLiteral("win64")),
         QStringLiteral("bakajiten.exe"));
+    QCOMPARE(UpdateChecker::matchedAsset(names, QStringLiteral("win64")),
+             QStringLiteral("bakajiten-win-x86_64.zip"));
     QCOMPARE(UpdateChecker::matchedAsset(names, QStringLiteral("linux-static")),
-             QStringLiteral("bakajiten-linux64-static.tar.gz"));
-    const QStringList macNames = {QStringLiteral("bakajiten-macos-arm64.zip"),
-                                  QStringLiteral("bakajiten-macos-x64.zip")};
+             QStringLiteral("bakajiten-linux-x86_64-static.tar.gz"));
+    const QStringList macNames = {QStringLiteral("bakajiten-macos-aarch64.zip"),
+                                  QStringLiteral("bakajiten-macos-x86_64.zip")};
     QCOMPARE(UpdateChecker::matchedAsset(macNames, QStringLiteral("macos-arm64")),
-             QStringLiteral("bakajiten-macos-arm64.zip"));
+             QStringLiteral("bakajiten-macos-aarch64.zip"));
     QCOMPARE(UpdateChecker::matchedAsset(macNames, QStringLiteral("macos-x64")),
-             QStringLiteral("bakajiten-macos-x64.zip"));
-    QVERIFY(UpdateChecker::matchedAsset({QStringLiteral("bakajiten-win64-v0.1.0.zip")},
+             QStringLiteral("bakajiten-macos-x86_64.zip"));
+    QVERIFY(UpdateChecker::matchedAsset({QStringLiteral("bakajiten-win-x86_64.zip")},
                                         QStringLiteral("appimage"))
                 .isEmpty());
+    // macOS Intel must not match the Windows suffix nor vice versa.
+    QVERIFY(UpdateChecker::matchedAsset(macNames, QStringLiteral("win64")).isEmpty());
     QVERIFY(UpdateChecker::matchedAsset(names, QStringLiteral("")).isEmpty());
     QVERIFY(UpdateChecker::matchedAsset({}, QStringLiteral("appimage")).isEmpty());
 }
@@ -62,13 +67,13 @@ void TestMainWindow::updaterAssetMatch() {
 void TestMainWindow::updaterInstallerKind() {
     // Suffix decides the install path (zip/tarball/bare binary).
     using Payload = UpdateInstaller::Payload;
-    QVERIFY(UpdateInstaller::payloadKind(QStringLiteral("bakajiten-win64-v0.1.0.zip")) ==
+    QVERIFY(UpdateInstaller::payloadKind(QStringLiteral("bakajiten-win-x86_64.zip")) ==
             Payload::Zip);
-    QVERIFY(UpdateInstaller::payloadKind(QStringLiteral("bakajiten-linux64-static.tar.gz")) ==
+    QVERIFY(UpdateInstaller::payloadKind(QStringLiteral("bakajiten-linux-x86_64-static.tar.gz")) ==
             Payload::Tarball);
-    QVERIFY(UpdateInstaller::payloadKind(QStringLiteral("Bakajiten-x86_64.AppImage")) ==
-            Payload::Executable);
-    QVERIFY(UpdateInstaller::payloadKind(QStringLiteral("bakajiten-macos-arm64.zip")) ==
+    QVERIFY(UpdateInstaller::payloadKind(
+                QStringLiteral("bakajiten-linux-x86_64-appimage.AppImage")) == Payload::Executable);
+    QVERIFY(UpdateInstaller::payloadKind(QStringLiteral("bakajiten-macos-aarch64.zip")) ==
             Payload::Zip);
 }
 

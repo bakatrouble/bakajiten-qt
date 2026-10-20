@@ -327,9 +327,9 @@ jobs:
       - name: Publish macOS app.
         if: startsWith(github.ref, 'refs/tags/v') && startsWith(matrix.os, 'macos')
         run: |
-          ARCH="${{ matrix.os == 'macos-arm64' && 'arm64' || 'x64' }}"
+          FILEARCH="${{ matrix.os == 'macos-arm64' && 'aarch64' || 'x86_64' }}"
           frontends/qt/packaging/bundle-macos-app.sh \
-            build/bakajiten "bakajiten-macos-${ARCH}.zip"
+            build/bakajiten "bakajiten-macos-${FILEARCH}.zip"
 
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v') && startsWith(matrix.os, 'macos')
@@ -385,12 +385,12 @@ jobs:
         run: >
           env NO_STRIP=1
           frontends/qt/packaging/build-appimage.sh
-          "$PWD/frontends/qt/build-appimage/AppDir" "$PWD/frontends/qt/build-appimage/Bakajiten-x86_64.AppImage"
+          "$PWD/frontends/qt/build-appimage/AppDir" "$PWD/frontends/qt/build-appimage/bakajiten-linux-x86_64-appimage.AppImage"
 
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
-          path: main/frontends/qt/build-appimage/Bakajiten-x86_64.AppImage
+          path: main/frontends/qt/build-appimage/bakajiten-linux-x86_64-appimage.AppImage
           retention-days: 7
 
   win-exe:
@@ -453,12 +453,12 @@ jobs:
         run: ./frontends/qt/packaging/build-win64.sh
 
       - name: Rename.
-        run: cp frontends/qt/build-win64/bakajiten-win64.zip "bakajiten-win64-${GITHUB_REF_NAME}.zip"
+        run: cp frontends/qt/build-win64/bakajiten-win-x86_64.zip "bakajiten-win-x86_64.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: win-exe
-          path: main/bakajiten-win64-*.zip
+          path: main/bakajiten-win-x86_64.zip
           retention-days: 7
 
   linux-static:
@@ -521,12 +521,12 @@ jobs:
         run: ./frontends/qt/packaging/build-linuxstatic.sh
 
       - name: Rename.
-        run: cp frontends/qt/build-linuxstatic/bakajiten-linux64-static.tar.gz bakajiten-linux64-static.tar.gz
+        run: cp frontends/qt/build-linuxstatic/bakajiten-linux-x86_64-static.tar.gz bakajiten-linux-x86_64-static.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-static
-          path: main/bakajiten-linux64-static.tar.gz
+          path: main/bakajiten-linux-x86_64-static.tar.gz
           retention-days: 7
 
   publish:

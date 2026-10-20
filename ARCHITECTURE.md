@@ -327,8 +327,9 @@ and conversion keystrokes land, mouse presses are swallowed).
   `BAKAJITEN_UPDATE_ARTIFACT` is empty (menu item hidden too).
   Otherwise polls `releases/latest`, compares with
   `QVersionNumber`, honors the skipped version, matches the
-  per-kind asset (`appimage→.AppImage`, `win64→.exe`,
-  `linux-static→.tar.gz`, `macos-arm64/-x64→zips`).
+  per-kind asset (`appimage→.AppImage`, `win64→.exe` +
+  `win-x86_64.zip`, `linux-static→.tar.gz`,
+  `macos-arm64→macos-aarch64.zip`, `macos-x64→macos-x86_64.zip`).
 - `UpdatePrompt` (has-artifact Download/Later vs notice
   Close-only) with per-version opt-out; `UpdateProgress`
   streams to `.part`, verifies size, atomically renames,

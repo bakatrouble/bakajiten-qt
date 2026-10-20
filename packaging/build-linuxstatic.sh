@@ -3,7 +3,7 @@
 #   ./frontends/qt/packaging/build-linuxstatic.sh [clean]
 # Configures in frontends/qt/build-linuxstatic/builddir and
 # produces
-# frontends/qt/build-linuxstatic/bakajiten-linux64-static.tar.gz
+# frontends/qt/build-linuxstatic/bakajiten-linux-x86_64-static.tar.gz
 # (bakajiten inside): one file with Qt linked statically (system
 # glibc/XCB stay dynamic — fully static glibc breaks DNS/TLS at
 # runtime, so no `-static` link here, unlike the Windows cross
@@ -40,5 +40,5 @@ docker run --rm -v "$PWD:/work" -v "$QTAPP/build-linuxstatic/builddir:/build" \
 # (and CI's cache save) can read it.
 docker run --rm -v "$CCACHE_HOST:/ccache" bakajiten-cross:linux-static \
     chown -R "$(id -u):$(id -g)" /ccache
-rm -f "$QTAPP/build-linuxstatic/bakajiten-linux64-static.tar.gz"
-tar -czf "$QTAPP/build-linuxstatic/bakajiten-linux64-static.tar.gz" -C "$QTAPP/build-linuxstatic/builddir" bakajiten
+rm -f "$QTAPP/build-linuxstatic/bakajiten-linux-x86_64-static.tar.gz"
+tar -czf "$QTAPP/build-linuxstatic/bakajiten-linux-x86_64-static.tar.gz" -C "$QTAPP/build-linuxstatic/builddir" bakajiten

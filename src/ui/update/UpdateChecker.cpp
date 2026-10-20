@@ -12,7 +12,8 @@
 #include <QVersionNumber>
 
 namespace {
-constexpr char releasesUrl[] = "https://api.github.com/repos/bakatrouble/bakajiten/releases/latest";
+constexpr char releasesUrl[] =
+    "https://api.github.com/repos/bakatrouble/bakajiten-qt/releases/latest";
 } // namespace
 
 UpdateChecker::UpdateChecker(QObject *parent) : QObject(parent) {
@@ -45,23 +46,28 @@ bool UpdateChecker::isNewer(const QString &current, const QString &tag) {
 }
 
 QString UpdateChecker::matchedAsset(const QStringList &names, const QString &artifact) {
-    QString suffix;
+    // Release file names are bakajiten-<os>-<arch>[-flavor].<ext>;
+    // each kind matches its distinctive tail (kinds themselves are
+    // the separate BAKAJITEN_UPDATE_ARTIFACT parameter).
+    QStringList suffixes;
     if (artifact == QStringLiteral("appimage")) {
-        suffix = QStringLiteral(".AppImage");
+        suffixes = {QStringLiteral(".AppImage")};
     } else if (artifact == QStringLiteral("win64")) {
-        suffix = QStringLiteral(".exe");
+        suffixes = {QStringLiteral(".exe"), QStringLiteral("win-x86_64.zip")};
     } else if (artifact == QStringLiteral("linux-static")) {
-        suffix = QStringLiteral(".tar.gz");
+        suffixes = {QStringLiteral(".tar.gz")};
     } else if (artifact == QStringLiteral("macos-arm64")) {
-        suffix = QStringLiteral("macos-arm64.zip");
+        suffixes = {QStringLiteral("macos-aarch64.zip")};
     } else if (artifact == QStringLiteral("macos-x64")) {
-        suffix = QStringLiteral("macos-x64.zip");
+        suffixes = {QStringLiteral("macos-x86_64.zip")};
     } else {
         return {};
     }
     for (const QString &name : names) {
-        if (name.endsWith(suffix, Qt::CaseInsensitive)) {
-            return name;
+        for (const QString &suffix : suffixes) {
+            if (name.endsWith(suffix, Qt::CaseInsensitive)) {
+                return name;
+            }
         }
     }
     return {};

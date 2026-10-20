@@ -7,7 +7,7 @@
 #   frontends/qt/packaging/build-appimage.sh [APPDIR] [OUTPUT] [clean]
 #
 # Defaults live under frontends/qt/build-appimage (AppDir +
-# builddir + Bakajiten-x86_64.AppImage). SKIP_BUILD=1 skips
+# builddir + bakajiten-linux-x86_64-appimage.AppImage). SKIP_BUILD=1 skips
 # configure + build and deploys the given APPDIR as-is. Data
 # artifacts (*.bin) are never bundled:
 # the app resolves them at runtime from /usr/share/bakajiten or the
@@ -30,7 +30,7 @@ if [ "${1:-}" = "clean" ] || [ "${2:-}" = "clean" ]; then
     exit 0
 fi
 APPDIR="${1:-$QTAPP/build-appimage/AppDir}"
-OUTPUT="${2:-$QTAPP/build-appimage/Bakajiten-x86_64.AppImage}"
+OUTPUT="${2:-$QTAPP/build-appimage/bakajiten-linux-x86_64-appimage.AppImage}"
 BUILD="$QTAPP/build-appimage/builddir"
 # Persistent ccache (CI caches this dir across runs; the container
 # paths it hashes are stable, so hits survive fresh checkouts).

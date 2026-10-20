@@ -6,7 +6,7 @@
 # uniffi-bindgen-cpp. Configures in
 # frontends/qt/build-macos/builddir, runs the offscreen test
 # suite, and bundles a self-contained
-# frontends/qt/build-macos/bakajiten-macos-<arch>.zip
+# frontends/qt/build-macos/bakajiten-macos-<aarch64|x86_64>.zip
 # (bakajiten.app inside, Qt frameworks included) for the host
 # architecture (no universal binary: the Rust crates build
 # single-arch through Corrosion, so a universal app would need
@@ -25,8 +25,8 @@ for tool in cmake ninja cargo rustc uniffi-bindgen-cpp; do
     }
 done
 case "$(uname -m)" in
-    arm64) ARCH=arm64 ;;
-    *) ARCH=x64 ;;
+    arm64) ARCH=arm64; FILEARCH=aarch64 ;;
+    *) ARCH=x64; FILEARCH=x86_64 ;;
 esac
 mkdir -p "$QTAPP/build-macos"
 cmake -S frontends/qt -B frontends/qt/build-macos/builddir -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -34,4 +34,4 @@ cmake -S frontends/qt -B frontends/qt/build-macos/builddir -G Ninja -DCMAKE_BUIL
 cmake --build frontends/qt/build-macos/builddir --target bakajiten test_mainwindow
 (cd frontends/qt/build-macos/builddir && QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 ctest)
 "$(dirname "$0")/bundle-macos-app.sh" \
-    frontends/qt/build-macos/builddir/bakajiten "$QTAPP/build-macos/bakajiten-macos-${ARCH}.zip"
+    frontends/qt/build-macos/builddir/bakajiten "$QTAPP/build-macos/bakajiten-macos-${FILEARCH}.zip"

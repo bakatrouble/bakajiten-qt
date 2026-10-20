@@ -2,7 +2,7 @@
 # Static Windows cross build. Run from the repo root:
 #   ./frontends/qt/packaging/build-win64.sh [clean]
 # Configures in frontends/qt/build-win64/builddir and
-# produces frontends/qt/build-win64/bakajiten-win64.zip
+# produces frontends/qt/build-win64/bakajiten-win-x86_64.zip
 # (bakajiten.exe inside): one file, Windows system DLLs only. The
 # build tree is container-owned (root); `clean` wipes it from inside
 # the container (host rm fails on those files). First run builds the
@@ -45,6 +45,6 @@ docker run --rm -v "$CCACHE_HOST:/ccache" bakajiten-cross:win64 \
 # Zip in the container (python3 is already there for aqt): the exe
 # needs no permission bits preserved. The font ships inside the
 # binary (BAKAJITEN_BUNDLE_CJK_FONT); only its license rides along.
-rm -f "$QTAPP/build-win64/bakajiten-win64.zip"
+rm -f "$QTAPP/build-win64/bakajiten-win-x86_64.zip"
 docker run --rm -v "$QTAPP/build-win64:/out" -v "$QTAPP/build-win64/builddir:/build" bakajiten-cross:win64 \
-    python3 -c "import zipfile; z = zipfile.ZipFile('/out/bakajiten-win64.zip', 'w', zipfile.ZIP_DEFLATED); z.write('/build/bakajiten.exe', 'bakajiten.exe'); z.write('/opt/fonts/OFL.txt', 'OFL.txt'); z.close()"
+    python3 -c "import zipfile; z = zipfile.ZipFile('/out/bakajiten-win-x86_64.zip', 'w', zipfile.ZIP_DEFLATED); z.write('/build/bakajiten.exe', 'bakajiten.exe'); z.write('/opt/fonts/OFL.txt', 'OFL.txt'); z.close()"
