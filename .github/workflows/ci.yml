@@ -76,12 +76,12 @@ jobs:
         working-directory: main
     steps:
       - name: Check out backend workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: bakatrouble/bakajiten
           path: main
       - name: Check out frontend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: main/frontends/qt
 
@@ -161,7 +161,7 @@ jobs:
       - name: Qt cache.
         if: (!startsWith(github.ref, 'refs/tags/v') || startsWith(matrix.os, 'macos'))
         id: cache-qt
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/qt
           key: qt-${{ env.QT_VERSION }}-${{ matrix.os }}-${{ matrix.qt-dir }}
@@ -180,7 +180,7 @@ jobs:
       - name: uniffi-bindgen-cpp cache.
         if: (!startsWith(github.ref, 'refs/tags/v') || startsWith(matrix.os, 'macos'))
         id: cache-bindgen
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/uniffi-bindgen-cpp*
           key: uniffi-bindgen-cpp-${{ env.UNIFFI_BINDGEN_TAG }}-${{ matrix.os }}
@@ -208,7 +208,7 @@ jobs:
       - name: Test data cache.
         if: (!startsWith(github.ref, 'refs/tags/v') || startsWith(matrix.os, 'macos'))
         id: cache-data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: main/data
           key: ${{ steps.data.outputs.key }}
@@ -264,7 +264,7 @@ jobs:
         # Generation prefix (v2): bump when the source layout moves
         # so prefix restores can never resurrect a tree configured
         # at a stale path (CMake refuses those outright).
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: main/build
           key: build-v2-${{ matrix.os }}-${{ env.QT_VERSION }}-${{ hashFiles('main/frontends/qt/**', 'main/lib/**', 'main/Cargo.toml', 'main/Cargo.lock', '.github/workflows/ci.yml') }}
@@ -318,7 +318,7 @@ jobs:
 
       - name: Upload test log on failure.
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lasttest-${{ matrix.os }}
           path: main/build/Testing/Temporary/LastTest.log
@@ -331,7 +331,7 @@ jobs:
           frontends/qt/packaging/bundle-macos-app.sh \
             build/bakajiten "bakajiten-macos-${FILEARCH}.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: startsWith(github.ref, 'refs/tags/v') && startsWith(matrix.os, 'macos')
         with:
           name: ${{ matrix.os }}
@@ -353,19 +353,19 @@ jobs:
         working-directory: main
     steps:
       - name: Check out backend workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: bakatrouble/bakajiten
           path: main
       - name: Check out frontend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: main/frontends/qt
 
       # Prebuilt deploy image (Qt + linuxdeploy baked in): pull,
       # never rebuild, in CI.
       - name: Packaging ccache.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: main/frontends/qt/build-ccache/appimage
           key: ccache-pkg-appimage-${{ github.run_id }}
@@ -387,7 +387,7 @@ jobs:
           frontends/qt/packaging/build-appimage.sh
           "$PWD/frontends/qt/build-appimage/AppDir" "$PWD/frontends/qt/build-appimage/bakajiten-linux-x86_64-appimage.AppImage"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: appimage
           path: main/frontends/qt/build-appimage/bakajiten-linux-x86_64-appimage.AppImage
@@ -408,12 +408,12 @@ jobs:
         working-directory: main
     steps:
       - name: Check out backend workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: bakatrouble/bakajiten
           path: main
       - name: Check out frontend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: main/frontends/qt
 
@@ -437,7 +437,7 @@ jobs:
 
       # Prebuilt MinGW + static-Qt image: pull, never rebuild.
       - name: Packaging ccache.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: main/frontends/qt/build-ccache/win64
           key: ccache-pkg-win64-${{ github.run_id }}
@@ -455,7 +455,7 @@ jobs:
       - name: Rename.
         run: cp frontends/qt/build-win64/bakajiten-win-x86_64.zip "bakajiten-win-x86_64.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: win-exe
           path: main/bakajiten-win-x86_64.zip
@@ -476,12 +476,12 @@ jobs:
         working-directory: main
     steps:
       - name: Check out backend workspace
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: bakatrouble/bakajiten
           path: main
       - name: Check out frontend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: main/frontends/qt
 
@@ -505,7 +505,7 @@ jobs:
 
       # Prebuilt static-Qt image: pull, never rebuild.
       - name: Packaging ccache.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: main/frontends/qt/build-ccache/linux-static
           key: ccache-pkg-linux-static-${{ github.run_id }}
@@ -523,7 +523,7 @@ jobs:
       - name: Rename.
         run: cp frontends/qt/build-linuxstatic/bakajiten-linux-x86_64-static.tar.gz bakajiten-linux-x86_64-static.tar.gz
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-static
           path: main/bakajiten-linux-x86_64-static.tar.gz
@@ -537,32 +537,32 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: appimage
           path: artifacts
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: win-exe
           path: artifacts
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: macos-arm64
           path: artifacts
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: macos-intel
           path: artifacts
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: linux-static
           path: artifacts
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true
