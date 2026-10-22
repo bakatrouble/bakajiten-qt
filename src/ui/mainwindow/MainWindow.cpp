@@ -15,7 +15,7 @@
 #include "core/settings/MemorizedState.h"
 #include "core/settings/Settings.h"
 #include "dev/UiDev.h"
-#include "ui/data/DataDialog.h"
+#include "ui/data/DictionaryManagerDialog.h"
 #include "ui/dictionary/DictionaryWidget.h"
 #include "ui/recognizer/RecognizerWidget.h"
 #include "ui/settings/SettingsDialog.h"
@@ -185,8 +185,8 @@ void MainWindow::toggleRecognizer(bool visible) { setRecognizerVisible(visible);
 void MainWindow::openDictionaries() {
     // Modeless: downloads run in the background while the views
     // keep working; landed files reload both views at once.
-    auto *dialog = new DataDialog(this);
-    connect(dialog, &DataDialog::dataChanged, this, [this] {
+    auto *dialog = new DictionaryManagerDialog(this);
+    connect(dialog, &DictionaryManagerDialog::dataChanged, this, [this] {
         ui->centralwidget->refreshArtifacts();
         recognizer->reloadModel();
     });

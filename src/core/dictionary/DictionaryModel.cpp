@@ -134,9 +134,9 @@ QVariant DictionaryModel::data(const QModelIndex &index, int role) const {
         return QString::fromStdString(hit.matched);
     }
     if (role == DictionaryModel::KanaOnlyRole) {
-        // First sense only (zkanji marks defs[0] with KanaOnly when
-        // it carries &uk; — "usually written using kana alone").
-        return !row.senses.isEmpty() && row.senses.first().misc.contains(QStringLiteral("uk"));
+        // First sense only: Rust marks kana-only senses with `uk`
+        // (badge reads `kana`).
+        return !row.senses.isEmpty() && row.senses.first().uk;
     }
     if (role != Qt::DisplayRole) {
         return {};

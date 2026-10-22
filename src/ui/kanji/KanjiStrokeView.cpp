@@ -1,6 +1,7 @@
 #include "ui/kanji/KanjiStrokeView.h"
 
 #include "core/palette/MaterialPalette.h"
+#include "recognizer.hpp"
 
 #include <QPaintEvent>
 #include <QPainter>
@@ -333,37 +334,21 @@ QVector<QRectF> KanjiStrokeView::badgeRects() const {
 
 /// Mapped sub-polyline covering `fraction` of the stroke by arc
 /// length (constant drawing speed regardless of point density).
+/// The arc walk lives in Rust now (same fused matcher math as the
+/// other frontends); mapping to device pixels stays trackside.
+/// Note: single-point and degenerate strokes now draw their first
+/// point instead of nothing (matches Android/web).
 QPolygonF KanjiStrokeView::subStroke(const QVector<QPointF> &stroke, double fraction,
                                      const std::function<QPointF(const QPointF &)> &map) {
-    QPolygonF poly;
-    if (stroke.size() < 2 || fraction <= 0.0) {
-        return poly;
-    }
-    QVector<QPointF> mapped;
-    mapped.reserve(stroke.size());
+    std::vector<recognizer::StrokePoint> pen;
+    pen.reserve(static_cast<std::size_t>(stroke.size()));
     for (const QPointF &p : stroke) {
-        mapped << map(p);
+        pen.push_back({static_cast<float>(p.x()), static_cast<float>(p.y())});
     }
-    double total = 0.0;
-    for (int i = 1; i < mapped.size(); ++i) {
-        total += std::hypot(mapped[i].x() - mapped[i - 1].x(), mapped[i].y() - mapped[i - 1].y());
-    }
-    if (total <= 0.0) {
-        return poly;
-    }
-    double target = qBound(0.0, fraction, 1.0) * total;
-    poly << mapped.first();
-    for (int i = 1; i < mapped.size(); ++i) {
-        const double seg =
-            std::hypot(mapped[i].x() - mapped[i - 1].x(), mapped[i].y() - mapped[i - 1].y());
-        if (target > seg) {
-            target -= seg;
-            poly << mapped[i];
-        } else {
-            const double t = seg > 0.0 ? target / seg : 0.0;
-            poly << mapped[i - 1] + t * (mapped[i] - mapped[i - 1]);
-            break;
-        }
+    QPolygonF poly;
+    for (const recognizer::StrokePoint &p :
+         recognizer::stroke_slice(pen, static_cast<float>(fraction))) {
+        poly << map(QPointF(p.x, p.y));
     }
     return poly;
 }

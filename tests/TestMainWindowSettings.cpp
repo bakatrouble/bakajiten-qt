@@ -8,18 +8,24 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFile>
+#include <QFileInfo>
 #include <QLabel>
 #include <QListWidget>
+#include <QScrollArea>
 #include <QSignalSpy>
 #include <QSlider>
 #include <QStackedWidget>
 #include <QTimer>
 
+#include "core/data/DataPaths.h"
 #include "core/settings/Settings.h"
+#include "ui/data/DictionaryManagerDialog.h"
+#include "ui/data/DictionaryManagerRow.h"
 #include "ui/mainwindow/MainWindow.h"
 #include "ui/settings/SettingsDialog.h"
 #include "util/Romaji.h"
 
+#include <QProgressBar>
 #include <QPushButton>
 #include <memory>
 
@@ -227,4 +233,71 @@ void TestMainWindow::settingsDialogUpdatesOptOut() {
     QVERIFY(!dialog.selectedCheckUpdates());
     QVERIFY(apply->isEnabled());
     baseline.save();
+}
+
+void TestMainWindow::dataDialogBuildsFromForm() {
+    // The Dictionaries dialog comes from the Designer form: static
+    // chrome (info, notice, button box) plus a scrollable sectioned
+    // list — Required and Optional headers, one row widget per
+    // artifact with its own (initially hidden) progress bar, like
+    // the Android manager.
+    DictionaryManagerDialog dialog(nullptr);
+    dialog.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+    auto *info = dialog.findChild<QLabel *>("infoLabel");
+    QVERIFY2(info != nullptr, "info label missing");
+    QVERIFY(info->wordWrap());
+    auto *scroll = dialog.findChild<QScrollArea *>("rowsScroll");
+    QVERIFY2(scroll != nullptr, "rows scroller missing");
+    auto *buttons = dialog.findChild<QDialogButtonBox *>();
+    QVERIFY2(buttons != nullptr, "button box missing");
+    QVERIFY2(buttons->button(QDialogButtonBox::Close) != nullptr, "Close button missing");
+    // Two section headers plus one row widget per artifact file.
+    const auto rows = dialog.findChildren<DictionaryManagerRow *>();
+    QCOMPARE(rows.size(), DataPaths::allFiles().size());
+    int actions = 0;
+    int removes = 0;
+    bool requiredHeader = false;
+    bool optionalHeader = false;
+    for (const QLabel *label : scroll->findChildren<QLabel *>()) {
+        if (label->text() == QStringLiteral("Required")) {
+            requiredHeader = true;
+        } else if (label->text() == QStringLiteral("Optional")) {
+            optionalHeader = true;
+        }
+    }
+    QVERIFY2(requiredHeader, "Required header missing");
+    QVERIFY2(optionalHeader, "Optional header missing");
+    for (const DictionaryManagerRow *row : rows) {
+        const auto rowButtons = row->findChildren<QPushButton *>();
+        QCOMPARE(rowButtons.size(), 2);
+        for (const QPushButton *button : rowButtons) {
+            if (button->text() == QStringLiteral("Remove")) {
+                ++removes;
+            } else {
+                ++actions;
+            }
+        }
+        const auto rowBars = row->findChildren<QProgressBar *>();
+        QCOMPARE(rowBars.size(), 1);
+        QVERIFY(!rowBars.front()->isVisibleTo(&dialog));
+    }
+    QCOMPARE(actions, DataPaths::allFiles().size());
+    QCOMPARE(removes, DataPaths::allFiles().size());
+    // Required artifacts never offer individual delete: their
+    // Remove buttons stay disabled (opt-ins stay armed); a full
+    // reset goes through the Clear cached files button.
+    const auto required = DataPaths::requiredFiles();
+    for (const DictionaryManagerRow *row : rows) {
+        const QString file = row->dataFile();
+        QVERIFY2(DataPaths::allFiles().contains(file), "row without artifact");
+        const bool present = QFileInfo::exists(DataPaths::filePath(file));
+        const auto rowButtons = row->findChildren<QPushButton *>();
+        for (const QPushButton *button : rowButtons) {
+            if (button->text() != QStringLiteral("Remove")) {
+                continue;
+            }
+            QCOMPARE(button->isEnabled(), present && !required.contains(file));
+        }
+    }
 }

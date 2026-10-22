@@ -70,7 +70,10 @@ if(BUILD_QT_TESTS)
         src/ui/update/UpdateProgress.cpp
         src/ui/data/DataChecker.cpp
         src/ui/data/DataDownloader.cpp
-        src/ui/data/DataDialog.cpp
+        src/ui/data/DictionaryManagerDialog.cpp
+    src/ui/data/DictionaryManagerRow.cpp
+    src/ui/data/DictionaryManagerDialog.ui
+    src/ui/data/DictionaryManagerRow.ui
         src/ui/kanji/KanjiDialog.ui
             src/ui/kanji/KanjiStrokeView.cpp
             src/util/Romaji.cpp
@@ -79,8 +82,8 @@ if(BUILD_QT_TESTS)
         src/widgets/table/DictionaryTableHover.cpp
         src/widgets/table/DictionaryTableScroll.cpp
         src/widgets/table/DictionaryTableSelect.cpp
-        src/widgets/table/DictionaryTableTags.cpp
-        src/ui/settings/SettingsDialog.cpp
+    src/widgets/table/DictionaryTableTags.cpp
+            src/ui/settings/SettingsDialog.cpp
         src/ui/recognizer/RecognizerWidget.cpp
         src/ui/recognizer/RecognizerWidgetChrome.cpp
         src/ui/recognizer/RecognizerWidget.ui

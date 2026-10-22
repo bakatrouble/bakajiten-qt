@@ -26,119 +26,187 @@ void DataDownloader::download(const DataManifest &remoteIn, const QByteArray &ma
         return;
     }
     DataPaths::ensureDirectory();
-    startNext();
+    pump();
 }
 
 void DataDownloader::cancel() {
-    if (reply != nullptr) {
-        // The abort lands in onReplyFinished, which drops the
-        // partial and reports (never emits finished after this).
-        reply->abort();
-    }
+    aborting = true;
     queue.clear();
+    // Aborts land in onReplyFinished, which only cleans up while
+    // `aborting` holds (never reports mid-teardown).
+    for (const Transfer &t : active) {
+        if (t.reply != nullptr) {
+            t.reply->abort();
+        }
+    }
+    for (const Transfer &t : active) {
+        delete t.output;
+    }
+    active.clear();
+    aborting = false;
 }
 
-void DataDownloader::startNext() {
-    if (queue.isEmpty()) {
-        QFile manifest(DataPaths::manifestPath());
-        if (manifest.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            manifest.write(manifestBytes);
-        }
-        emit finished();
-        return;
+void DataDownloader::pump() {
+    while (static_cast<int>(active.size()) < kMaxParallel && !queue.isEmpty()) {
+        startOne(queue.takeFirst());
     }
-    current = queue.takeFirst();
-    const QString finalPath = DataPaths::filePath(current);
+    maybeFinish();
+}
+
+void DataDownloader::startOne(const QString &file) {
+    const QString finalPath = DataPaths::filePath(file);
     const QString gzPath = finalPath + QStringLiteral(".gz");
     const QString partPath = gzPath + QStringLiteral(".part");
-    output = new QFile(partPath, this);
+    QFile *output = new QFile(partPath, this);
     if (!output->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         qCWarning(dataLog) << "cannot write" << partPath;
-        emit failed(tr("Cannot write %1").arg(partPath));
         delete output;
-        output = nullptr;
+        failAll(tr("Cannot write %1").arg(partPath));
         return;
     }
-    qCDebug(dataLog) << "downloading" << current;
-    QNetworkRequest request{QUrl(DataSource::fileUrl(current))};
+    qCDebug(dataLog) << "downloading" << file;
+    QNetworkRequest request{QUrl(DataSource::fileUrl(file))};
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("bakajiten-data"));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
-    reply = network->get(request);
-    receivedBytes = 0;
+    QNetworkReply *reply = network->get(request);
     connect(reply, &QNetworkReply::downloadProgress, this, &DataDownloader::onProgress);
     connect(reply, &QNetworkReply::finished, this, &DataDownloader::onReplyFinished);
+    active.push_back(Transfer{file, reply, output, 0});
 }
 
 void DataDownloader::onProgress(qint64 received, qint64 /*total*/) {
-    receivedBytes = received;
-    if (output != nullptr && output->isOpen() && reply != nullptr) {
-        // QNetworkReply buffers: drain what arrived since the last
-        // signal straight to disk (progress doubles as the pump).
-        output->write(reply->readAll());
+    auto *reply = qobject_cast<QNetworkReply *>(sender());
+    for (Transfer &t : active) {
+        if (t.reply == reply) {
+            t.receivedBytes = received;
+            if (t.output != nullptr && t.output->isOpen()) {
+                // QNetworkReply buffers: drain what arrived since the
+                // last signal straight to disk (progress doubles as
+                // the pump).
+                t.output->write(reply->readAll());
+            }
+            // Transport is the `.gz`: compressed size is the honest total.
+            const qint64 known = remote.files.value(t.file).gz;
+            emit progress(t.file, received, known);
+            return;
+        }
     }
-    // Transport is the `.gz`: compressed size is the honest total.
-    const qint64 known = remote.files.value(current).gz;
-    emit progress(current, received, known);
 }
 
 void DataDownloader::onReplyFinished() {
+    auto *reply = qobject_cast<QNetworkReply *>(sender());
+    auto it = active.begin();
+    for (; it != active.end(); ++it) {
+        if (it->reply == reply) {
+            break;
+        }
+    }
+    if (it == active.end()) {
+        return;
+    }
+    Transfer t = *it;
+    active.erase(it);
     const bool ok = reply != nullptr && reply->error() == QNetworkReply::NoError;
     const QString failure = reply != nullptr ? reply->errorString() : tr("Download failed");
-    if (reply != nullptr) {
-        if (ok) {
-            output->write(reply->readAll());
-        }
-        reply->deleteLater();
-        reply = nullptr;
+    if (ok && t.output != nullptr) {
+        t.output->write(reply->readAll());
     }
-    const QString partPath = output != nullptr ? output->fileName() : QString();
-    if (output != nullptr) {
-        output->close();
-        delete output;
-        output = nullptr;
+    if (reply != nullptr) {
+        reply->deleteLater();
+    }
+    const QString partPath = t.output != nullptr ? t.output->fileName() : QString();
+    if (t.output != nullptr) {
+        t.output->close();
+        delete t.output;
+    }
+    if (aborting) {
+        QFile::remove(partPath);
+        maybeFinish();
+        return;
     }
     if (!ok) {
         QFile::remove(partPath);
-        qCWarning(dataLog) << "download failed for" << current << ":" << failure;
-        emit failed(failure);
+        qCWarning(dataLog) << "download failed for" << t.file << ":" << failure;
+        failAll(failure);
         return;
     }
     QFile gz(partPath);
     if (!gz.open(QIODevice::ReadOnly)) {
         qCWarning(dataLog) << "cannot read" << partPath;
-        emit failed(tr("Cannot read %1").arg(partPath));
+        QFile::remove(partPath);
+        failAll(tr("Cannot read %1").arg(partPath));
         return;
     }
     const std::optional<QByteArray> plain = Gzip::unpack(gz.readAll());
     gz.close();
     QFile::remove(partPath);
     if (!plain.has_value()) {
-        qCWarning(dataLog) << "could not unpack" << current;
-        emit failed(tr("Could not unpack %1").arg(current));
+        qCWarning(dataLog) << "could not unpack" << t.file;
+        failAll(tr("Could not unpack %1").arg(t.file));
         return;
     }
     // Hash-before-rename: a truncated asset never lands in place.
-    if (DataManifestReader::sha256Of(*plain) != remote.files.value(current).sha256) {
-        qCWarning(dataLog) << "checksum mismatch for" << current;
-        emit failed(tr("Checksum mismatch for %1").arg(current));
+    if (DataManifestReader::sha256Of(*plain) != remote.files.value(t.file).sha256) {
+        qCWarning(dataLog) << "checksum mismatch for" << t.file;
+        failAll(tr("Checksum mismatch for %1").arg(t.file));
         return;
     }
-    const QString binPart = DataPaths::filePath(current) + QStringLiteral(".part");
+    const QString binPart = DataPaths::filePath(t.file) + QStringLiteral(".part");
     QFile out(binPart);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
         out.write(*plain) != plain->size()) {
         QFile::remove(binPart);
-        emit failed(tr("Cannot write %1").arg(binPart));
+        failAll(tr("Cannot write %1").arg(binPart));
         return;
     }
     out.close();
-    const QString finalPath = DataPaths::filePath(current);
+    const QString finalPath = DataPaths::filePath(t.file);
     QFile::remove(finalPath);
     if (!QFile::rename(binPart, finalPath)) {
-        emit failed(tr("Cannot move %1 into place").arg(current));
+        failAll(tr("Cannot move %1 into place").arg(t.file));
         return;
     }
-    emit fileFinished(current);
-    startNext();
+    emit fileFinished(t.file);
+    pump();
+}
+
+/// First failure wins: drop the queue, abort the rest (their
+/// landings only clean up), report once.
+void DataDownloader::failAll(const QString &reason) {
+    if (aborting) {
+        return;
+    }
+    aborting = true;
+    queue.clear();
+    for (const Transfer &t : active) {
+        if (t.reply != nullptr) {
+            t.reply->abort();
+        }
+    }
+    for (const Transfer &t : active) {
+        if (t.output != nullptr) {
+            const QString partPath = t.output->fileName();
+            t.output->close();
+            delete t.output;
+            QFile::remove(partPath);
+        }
+        if (t.reply != nullptr) {
+            t.reply->deleteLater();
+        }
+    }
+    active.clear();
+    aborting = false;
+    emit failed(reason);
+}
+
+void DataDownloader::maybeFinish() {
+    if (!queue.isEmpty() || !active.isEmpty() || aborting) {
+        return;
+    }
+    QFile manifest(DataPaths::manifestPath());
+    if (manifest.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        manifest.write(manifestBytes);
+    }
+    emit finished();
 }

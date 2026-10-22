@@ -239,7 +239,8 @@ void TestMainWindow::dictionaryUkTagRendersRed() {
     // rest stay dim, each keeping its own tooltip.
     SenseDisplay sense;
     sense.gloss = QStringLiteral("to eat");
-    sense.misc = QStringList{QStringLiteral("uk"), QStringLiteral("arch")};
+    sense.misc = QStringList{QStringLiteral("kana"), QStringLiteral("arch")};
+    sense.uk = true;
     sense.miscTips = QStringList{QStringLiteral("usually kana"), QStringLiteral("archaic")};
     const QPalette palette;
     const MaterialPalette theme = MaterialPalette::fromPalette(palette);

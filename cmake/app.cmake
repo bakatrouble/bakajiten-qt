@@ -59,7 +59,10 @@ add_executable(bakajiten
     src/ui/update/UpdateProgress.cpp
     src/ui/data/DataChecker.cpp
     src/ui/data/DataDownloader.cpp
-    src/ui/data/DataDialog.cpp
+    src/ui/data/DictionaryManagerDialog.cpp
+    src/ui/data/DictionaryManagerRow.cpp
+    src/ui/data/DictionaryManagerDialog.ui
+    src/ui/data/DictionaryManagerRow.ui
     src/ui/kanji/KanjiDialog.ui
     src/ui/kanji/KanjiStrokeView.cpp
     src/util/Romaji.cpp

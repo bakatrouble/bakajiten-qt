@@ -75,6 +75,7 @@ private slots:
     void settingsDialogReadingOptions();
     void settingsDialogUpdatesOptOut();
     void settingsDialogDirtyTracking();
+    void dataDialogBuildsFromForm();
     void settingsDialogApplyUnDirties();
     void settingsDialogScaleRecreates();
     void settingsScalesBothFontModes();

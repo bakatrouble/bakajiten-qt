@@ -173,7 +173,9 @@ QVector<ArticleRuns::FormBlock> ArticleRuns::formBlocks(const ArticleDisplay &ar
     return blocks;
 }
 
-QString ArticleRuns::queryFor(const QString &term) { return term.section(u'・', 0, 0); }
+QString ArticleRuns::queryFor(const QString &term) {
+    return QString::fromStdString(dict::query_for(term.toStdString()));
+}
 
 bool ArticleRuns::isCommonWord(const ArticleDisplay &article) {
     static const QStringList common = {QStringLiteral("news1"), QStringLiteral("news2"),

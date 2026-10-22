@@ -1,5 +1,6 @@
 #include "ui/kanji/KanjiDialog.h"
 
+#include "core/dictionary/DictStore.h"
 #include "core/dictionary/DictWorker.h"
 #include "core/dictionary/DictionaryModel.h"
 #include "core/dictionary/KanjiInfo.h"
@@ -40,13 +41,6 @@
 #include <QtGlobal>
 
 #include <vector>
-
-namespace {
-/// Joined list value, `-` when the source carries none.
-QString joinedOrDash(const QStringList &items, const QString &sep) {
-    return items.isEmpty() ? QStringLiteral("-") : items.join(sep);
-}
-} // namespace
 
 KanjiDialog::KanjiDialog(KanjiInfo *info, DictionaryModel *modelIn, QWidget *parent)
     : QDialog(parent), kanjiInfo(info), model(modelIn) {
@@ -243,44 +237,99 @@ void KanjiDialog::setCharacter(const QString &ch) {
         runs << RunLabel::Run{value, RunLabel::Ink::Body};
         first = false;
     };
-    row(tr("Meanings:"), card.meanings.join(QStringLiteral(", ")));
-    row(tr("ON readings:"), card.on.join(QStringLiteral("\u3001")));
-    row(tr("Kun readings:"), card.kun.join(QStringLiteral("\u3001")));
-    row(tr("Nanori:"), joinedOrDash(card.nanori, QStringLiteral("\u3001")));
-    row(tr("Chinese:"), joinedOrDash(card.chinese, QStringLiteral(", ")));
-    row(tr("Korean:"), joinedOrDash(card.korean, QStringLiteral(", ")));
-    row(tr("Vietnamese:"), joinedOrDash(card.vietnamese, QStringLiteral(", ")));
-    const QString gradeText =
-        card.grade > 0 ? tr("%1 %2").arg(KanjiInfo::gradeName(card.grade)).arg(card.grade)
-                       : QStringLiteral("-");
-    row(tr("Grade:"), gradeText);
-    const QString jlptText = card.jlpt > 0 ? QString::number(card.jlpt) : QStringLiteral("-");
-    row(tr("JLPT:"), jlptText);
-    row(tr("Frequency:"), card.freq > 0 ? QString::number(card.freq) : QStringLiteral("-"));
-    row(tr("Radical names:"), joinedOrDash(card.radNames, QStringLiteral(", ")));
-    row(tr("Strokes:"), QString::number(card.strokes));
-    row(tr("JIS X0208:"), card.jis.isEmpty() ? QStringLiteral("-") : card.jis);
-    row(tr("JIS X0212:"), joinedOrDash(card.jis212, QStringLiteral(", ")));
-    row(tr("JIS X0213:"), joinedOrDash(card.jis213, QStringLiteral(", ")));
-    row(tr("JIS X0208 refs:"), joinedOrDash(card.jis208Refs, QStringLiteral(", ")));
-    const QList<uint> codepoints = card.character.toUcs4();
-    row(tr("Unicode:"), codepoints.isEmpty()
-                            ? QStringLiteral("-")
-                            : QStringLiteral("0x%1").arg(QString::number(codepoints.front(), 16)));
-    QString skipText =
-        card.skip.isEmpty() ? QStringLiteral("-") : card.skip.join(QStringLiteral(", "));
-    if (card.skipMisgrade && !card.skip.isEmpty()) {
-        skipText += tr(" (miscount)");
+    // Detail rows compiled once in Rust (same kanji_details the
+    // other frontends render): keys map to translated captions;
+    // values arrive preformatted.
+    if (const std::optional<dict::KanjiEntry> full =
+            DictStore::shared().lookupKanji(ch.toStdString())) {
+        for (const dict::KanjiDetailRow &detail : dict::kanji_details(full.value())) {
+            QString caption;
+            switch (detail.key) {
+            case dict::KanjiDetailKey::kMeaning:
+                caption = tr("Meanings:");
+                break;
+            case dict::KanjiDetailKey::kOn:
+                caption = tr("ON readings:");
+                break;
+            case dict::KanjiDetailKey::kKun:
+                caption = tr("Kun readings:");
+                break;
+            case dict::KanjiDetailKey::kNanori:
+                caption = tr("Nanori:");
+                break;
+            case dict::KanjiDetailKey::kChinese:
+                caption = tr("Chinese:");
+                break;
+            case dict::KanjiDetailKey::kKorean:
+                caption = tr("Korean:");
+                break;
+            case dict::KanjiDetailKey::kVietnamese:
+                caption = tr("Vietnamese:");
+                break;
+            case dict::KanjiDetailKey::kStrokes:
+                caption = tr("Strokes:");
+                break;
+            case dict::KanjiDetailKey::kGrade:
+                caption = tr("Grade:");
+                break;
+            case dict::KanjiDetailKey::kJlpt:
+                caption = tr("JLPT:");
+                break;
+            case dict::KanjiDetailKey::kFrequency:
+                caption = tr("Frequency:");
+                break;
+            case dict::KanjiDetailKey::kRadical:
+                caption = tr("Radical:");
+                break;
+            case dict::KanjiDetailKey::kRadicalNames:
+                caption = tr("Radical names:");
+                break;
+            case dict::KanjiDetailKey::kUnicode:
+                caption = tr("Unicode:");
+                break;
+            case dict::KanjiDetailKey::kJis0208:
+                caption = tr("JIS X0208:");
+                break;
+            case dict::KanjiDetailKey::kJis0212:
+                caption = tr("JIS X0212:");
+                break;
+            case dict::KanjiDetailKey::kJis0213:
+                caption = tr("JIS X0213:");
+                break;
+            case dict::KanjiDetailKey::kJis0208Refs:
+                caption = tr("JIS X0208 refs:");
+                break;
+            case dict::KanjiDetailKey::kSkip:
+                caption = tr("SKIP:");
+                break;
+            case dict::KanjiDetailKey::kFourCorner:
+                caption = tr("Four corner:");
+                break;
+            case dict::KanjiDetailKey::kDeroo:
+                caption = tr("De Roo:");
+                break;
+            case dict::KanjiDetailKey::kShDesc:
+                caption = tr("SH:");
+                break;
+            case dict::KanjiDetailKey::kNelson:
+                caption = tr("Nelson:");
+                break;
+            case dict::KanjiDetailKey::kNjecd:
+                caption = tr("NJECD:");
+                break;
+            case dict::KanjiDetailKey::kOneill:
+                caption = tr("O'Neill:");
+                break;
+            case dict::KanjiDetailKey::kDerooVariant:
+                caption = tr("De Roo refs:");
+                break;
+            case dict::KanjiDetailKey::kShRefs:
+                caption = tr("SH refs:");
+                break;
+            }
+            row(caption, QString::fromStdString(detail.value));
+        }
     }
-    row(tr("SKIP:"), skipText);
-    row(tr("Four corner:"), joinedOrDash(card.fourCorner, QStringLiteral(", ")));
-    row(tr("De Roo:"), joinedOrDash(card.deroo, QStringLiteral(", ")));
-    row(tr("SH:"), joinedOrDash(card.shDesc, QStringLiteral(", ")));
-    row(tr("Nelson:"), joinedOrDash(card.nelsonC, QStringLiteral(", ")));
-    row(tr("NJECD:"), joinedOrDash(card.njecd, QStringLiteral(", ")));
-    row(tr("O'Neill:"), joinedOrDash(card.oneill, QStringLiteral(", ")));
-    row(tr("De Roo refs:"), joinedOrDash(card.derooVariant, QStringLiteral(", ")));
-    row(tr("SH refs:"), joinedOrDash(card.shRefs, QStringLiteral(", ")));
     infoLabel->setRuns(runs);
     onStrokeProgress(strokeView->shownCount(), strokeView->strokeCount());
     refreshTheme();

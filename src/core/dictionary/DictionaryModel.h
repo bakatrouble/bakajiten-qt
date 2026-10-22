@@ -19,8 +19,11 @@ struct SourceDisplay {
 };
 
 /// One sense shaped for display (zkanji-style runs): abbreviated
-/// tag labels per category plus the joined gloss text. Senses
-/// without English glosses are dropped upstream (no empty runs).
+/// tag labels per category plus the joined gloss text. Shaped by
+/// Rust (`lib/libdict display_senses`): `misc` carries `kana` (not
+/// raw `uk`), and `uk` marks kana-only senses for the red ink and
+/// the KanaOnly role. Senses without glosses are dropped upstream
+/// (no empty runs).
 /// `*Tips` parallel their label lists one-to-one (built in the same
 /// pass): full descriptions behind each abbreviated tag for native
 /// hover tooltips.
@@ -38,12 +41,13 @@ struct SenseDisplay {
     QStringList onlyReb;
     QStringList notes;
     QVector<SourceDisplay> sources;
+    bool uk = false;
 };
 
-/// Abbreviated misc tag for "usually written using kana alone"
-/// (`&uk;` → `uk`): painted warning-red wherever tags show, since
-/// the kanji form alongside it is rarely used.
-inline bool isUsuallyKana(const QString &tag) { return tag == QStringLiteral("uk"); }
+/// The `uk` badge reads `kana` (mapped trackside in Rust, shown
+/// warning-red wherever tags show since the kanji form alongside
+/// it is rarely used).
+inline bool isUsuallyKana(const QString &tag) { return tag == QStringLiteral("kana"); }
 
 /// One headword form with annotations.
 struct ElementDisplay {
@@ -186,15 +190,10 @@ private:
     /// [`SensesRole`]). Senses without glosses are skipped.
     static QString formatSenses(const dict::DictEntry &entry);
     /// Structured senses for [`SensesRole`]: per-sense abbreviated
-    /// tag labels plus joined gloss text, gloss-less senses dropped.
+    /// tag labels plus joined gloss text, gloss-less senses dropped
+    /// (shaped by Rust `display_senses`, same contract as the other
+    /// frontends).
     static QVector<SenseDisplay> displaySenses(const dict::DictEntry &entry);
-    /// Display form for one row: the first form containing the
-    /// query, else the entry's own first form. Rows matched through
-    /// a secondary form (query 在る on the 有る entry) would
-    /// otherwise show an apparently unrelated headword.
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-    static QString matchForm(const QStringList &forms, const QString &query,
-                             const QString &fallback);
 
     /// Search cap: effectively uncapped — layout cost no longer
     /// depends on row count (only visible rows are ever measured,
@@ -213,6 +212,6 @@ private:
     std::vector<dict::SearchHit> rows;
     mutable std::vector<std::optional<CachedRow>> cache;
     /// Query behind the live rows: row display prefers the form
-    /// containing it (see `matchForm`).
+    /// containing it (see Rust `prefer_keb` / `prefer_reb`).
     QString lastQuery;
 };

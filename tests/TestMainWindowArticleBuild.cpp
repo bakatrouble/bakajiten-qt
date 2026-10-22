@@ -48,7 +48,8 @@ void TestMainWindow::dictionaryArticleBuildsWidgets() {
     article.readings = {headReading, otherReading};
     SenseDisplay first;
     first.pos = QStringList{QStringLiteral("v1")};
-    first.misc = QStringList{QStringLiteral("uk")};
+    first.misc = QStringList{QStringLiteral("kana")};
+    first.uk = true;
     first.gloss = QStringLiteral("to eat & drink");
     first.field = QStringList{QStringLiteral("food")};
     first.xref = QStringList{QStringLiteral("飲む・1")};
@@ -185,7 +186,8 @@ void TestMainWindow::dictionaryArticleUkRendersRed() {
     // other tags stay dim.
     SenseDisplay sense;
     sense.gloss = QStringLiteral("to eat");
-    sense.misc = QStringList{QStringLiteral("uk"), QStringLiteral("col")};
+    sense.misc = QStringList{QStringLiteral("kana"), QStringLiteral("col")};
+    sense.uk = true;
     const QVector<RunLabel::Run> runs = ArticleRuns::senseRuns(sense, 1);
     // Number, uk, col, gloss.
     QCOMPARE(runs.size(), 4);
@@ -277,7 +279,8 @@ void TestMainWindow::dictionaryArticleTagTooltipShowsDescription() {
     sense.gloss = QStringLiteral("to eat");
     sense.pos = QStringList{QStringLiteral("v1")};
     sense.posTips = QStringList{QStringLiteral("Ichidan verb")};
-    sense.misc = QStringList{QStringLiteral("uk")};
+    sense.misc = QStringList{QStringLiteral("kana")};
+    sense.uk = true;
     sense.miscTips = QStringList{QStringLiteral("usually kana")};
     const QVector<RunLabel::Run> runs = ArticleRuns::senseRuns(sense, 1);
     QString posTip;

@@ -22,16 +22,10 @@ const DictionaryModel::CachedRow &DictionaryModel::rowAt(int row) const {
         const dict::SearchHit &hit = rows[static_cast<std::size_t>(row)];
         try {
             if (const std::optional<dict::DictEntry> entry = DictStore::shared().entryAt(hit.idx)) {
-                QStringList kebs;
-                for (const dict::DictKanjiElement &k : entry->kanji) {
-                    kebs << QString::fromStdString(k.keb);
-                }
-                QStringList rebs;
-                for (const dict::DictReadingElement &r : entry->readings) {
-                    rebs << QString::fromStdString(r.reb);
-                }
-                fresh.heading = matchForm(kebs, lastQuery, QString::fromStdString(entry->heading));
-                fresh.reading = matchForm(rebs, lastQuery, QString::fromStdString(entry->reading));
+                fresh.heading =
+                    QString::fromStdString(dict::prefer_keb(*entry, lastQuery.toStdString()));
+                fresh.reading =
+                    QString::fromStdString(dict::prefer_reb(*entry, lastQuery.toStdString()));
                 fresh.meaning = formatSenses(*entry);
                 fresh.senses = displaySenses(*entry);
                 fresh.headingIsKana = Romaji::isKana(fresh.heading);
@@ -45,19 +39,6 @@ const DictionaryModel::CachedRow &DictionaryModel::rowAt(int row) const {
         slot = std::move(fresh);
     }
     return *slot;
-}
-
-// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-QString DictionaryModel::matchForm(const QStringList &forms, const QString &query,
-                                   const QString &fallback) {
-    if (!query.isEmpty()) {
-        for (const QString &form : forms) {
-            if (form.contains(query)) {
-                return form;
-            }
-        }
-    }
-    return fallback;
 }
 
 QString DictionaryModel::formatSenses(const dict::DictEntry &entry) {
@@ -90,59 +71,47 @@ QString abbreviateTag(const std::string &label) {
 
 /// Every sense tag, abbreviated and deduplicated: the delegate paints
 /// the joined labels small and green ahead of the meaning body.
+/// Shaped by Rust (`lib/libdict display_senses`) — same contract as
+/// the other frontends: `misc` already carries `kana`, `uk` marks
+/// kana-only senses.
 QVector<SenseDisplay> DictionaryModel::displaySenses(const dict::DictEntry &entry) {
     QVector<SenseDisplay> out;
-    for (const dict::DictSense &sense : entry.senses) {
+    for (const dict::ShapedSense &s : dict::display_senses(entry)) {
+        SenseDisplay display;
+        display.uk = s.uk;
+        for (const dict::ShapedTag &t : s.pos) {
+            display.pos << QString::fromStdString(t.label);
+            display.posTips << QString::fromStdString(t.tip);
+        }
+        for (const dict::ShapedTag &t : s.field) {
+            display.field << QString::fromStdString(t.label);
+            display.fieldTips << QString::fromStdString(t.tip);
+        }
+        for (const dict::ShapedTag &t : s.misc) {
+            display.misc << QString::fromStdString(t.label);
+            display.miscTips << QString::fromStdString(t.tip);
+        }
         QStringList glosses;
-        for (const std::string &gloss : sense.glosses) {
+        for (const std::string &gloss : s.glosses) {
             glosses << QString::fromStdString(gloss);
         }
-        if (glosses.isEmpty()) {
-            continue; // foreign-only sense: no runs at all
-        }
-        SenseDisplay display;
         display.gloss = glosses.join(QStringLiteral("; "));
-        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-        auto abbreviateAll = [&](const auto &indices, auto labelOf, auto tipOf, QStringList &out,
-                                 QStringList &tipOut) {
-            for (const std::uint8_t tag : indices) {
-                const QString abbreviated = abbreviateTag(labelOf(tag));
-                if (!abbreviated.isEmpty() && !out.contains(abbreviated)) {
-                    out << abbreviated;
-                    tipOut << QString::fromStdString(tipOf(tag));
-                }
-            }
-        };
-        abbreviateAll(
-            sense.pos,
-            [&](std::uint8_t tag) {
-                return entry.is_name ? dict::name_type_label(tag) : dict::pos_label(tag);
-            },
-            [&](std::uint8_t tag) {
-                return entry.is_name ? dict::name_type_description(tag)
-                                     : dict::pos_description(tag);
-            },
-            display.pos, display.posTips);
-        abbreviateAll(sense.field, dict::field_label, dict::field_description, display.field,
-                      display.fieldTips);
-        abbreviateAll(sense.misc, dict::misc_label, dict::misc_description, display.misc,
-                      display.miscTips);
-        for (const std::string &s : sense.xref) {
-            display.xref << QString::fromStdString(s);
+        for (const std::string &x : s.xref) {
+            display.xref << QString::fromStdString(x);
         }
-        for (const std::string &s : sense.ant) {
-            display.ant << QString::fromStdString(s);
+        for (const std::string &x : s.ant) {
+            display.ant << QString::fromStdString(x);
         }
-        for (const std::string &s : sense.stagk) {
-            display.onlyKeb << QString::fromStdString(s);
+        for (const std::string &x : s.restricted_kanji) {
+            display.onlyKeb << QString::fromStdString(x);
         }
-        for (const std::string &s : sense.stagr) {
-            display.onlyReb << QString::fromStdString(s);
+        for (const std::string &x : s.restricted_reading) {
+            display.onlyReb << QString::fromStdString(x);
         }
-        for (const std::string &s : sense.info) {
-            display.notes << QString::fromStdString(s);
+        for (const std::string &x : s.info) {
+            display.notes << QString::fromStdString(x);
         }
-        for (const dict::LangSource &l : sense.sources) {
+        for (const dict::ShapedSource &l : s.sources) {
             SourceDisplay source;
             if (l.lang.has_value()) {
                 source.lang = QString::fromStdString(l.lang.value());

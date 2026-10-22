@@ -4,16 +4,20 @@
 #include <QString>
 #include <QStringList>
 
+#include <QList>
+
 #include "core/data/DataManifest.h"
 
 class QFile;
 class QNetworkAccessManager;
 class QNetworkReply;
 
-/// Sequential raw-`.bin` download into the data dir: atomic `.part`
-/// + rename per file, sha256-verified against the manifest, then
-/// the manifest itself lands next to them. One file in flight;
-/// `cancel` aborts and drops the partial.
+/// Capped-parallel `.bin` download into the data dir (4 in flight):
+/// atomic `.part` + rename per file, sha256-verified against the
+/// manifest, then the manifest itself lands next to them. Progress
+/// reports per file (the dialog aggregates); `fileFinished` lands
+/// per install. First failure cancels the rest and reports once.
+/// `cancel` aborts silently and drops the partials.
 class DataDownloader : public QObject {
     Q_OBJECT
 public:
@@ -36,14 +40,29 @@ private slots:
     void onReplyFinished();
 
 private:
-    void startNext();
+    struct Transfer {
+        QString file;
+        QNetworkReply *reply = nullptr;
+        QFile *output = nullptr;
+        qint64 receivedBytes = 0;
+    };
+
+    /// Fill free slots from the queue (cap `kMaxParallel`).
+    void pump();
+    void startOne(const QString &file);
+    /// First failure wins: drop the queue, abort the rest (their
+    /// landings only clean up), report once.
+    void failAll(const QString &reason);
+    /// Manifest lands + `finished`, once the queue and the in-flight
+    /// set are both empty.
+    void maybeFinish();
+
+    static constexpr int kMaxParallel = 4;
 
     QNetworkAccessManager *network = nullptr;
-    QNetworkReply *reply = nullptr;
-    QFile *output = nullptr;
     DataManifest remote;
     QByteArray manifestBytes;
     QStringList queue;
-    QString current;
-    qint64 receivedBytes = 0;
+    QList<Transfer> active;
+    bool aborting = false;
 };
