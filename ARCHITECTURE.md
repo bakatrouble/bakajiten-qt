@@ -98,7 +98,8 @@ Debug builds, OFF otherwise.
   `reading` (`ReadingDisplay` Kana/Hepburn/Kunrei),
   `checkUpdates` (bool, default true). File:
   `<AppConfigLocation>/settings.yaml` (or
-  `BAKAJITEN_SETTINGS`); `shared()` is the live instance;
+  `BAKAJITEN_SETTINGS`); `shared()` is the live instance
+  (points into the SettingsStore value, see below);
   `operator==` drives dirty checks; `apply()` re-sets style +
   font from the live desktop base (never compounded).
 - `YamlFormat` — registers a `yaml` `QSettings` format
@@ -107,6 +108,27 @@ Debug builds, OFF otherwise.
   (window state, never user-edited): results column widths,
   article width (+ rescale on UI-scale change), recognizer panel
   size, kanji strip open states, skipped update version.
+
+### Reactive stores (`src/core/state/`, ReactivePlusPlus + rppqt)
+
+- Singleton `behavior_subject` state (`SearchStore`,
+  `SettingsStore`, `DataStore`), fetched as a pinned tarball
+  (`AlexInLog/ReactivePlusPlus` v2.2.3 + SHA256). Qt signals
+  enter through `rppqt::source::from_signal`; pipelines that hop
+  threads land back through
+  `rppqt::schedulers::main_thread_scheduler`. Subscribe API is
+  `subscribe(context, handler)` — `QPointer`-guarded, no manual
+  unsubscribe.
+- `SearchStore` owns field text, edge mode, target, scope; text
+  debounced 200 ms, flags/scope immediate. The widget executes
+  requests and drops debounced echoes of Enter searches
+  (`lastImmediate` — the old timer-stop).
+- `SettingsStore` owns the live `AppSettings` (from storage);
+  writers use `set()`, readers use `current()` (or `shared()`
+  for read/persist call sites).
+- `DataStore` owns the last catalog check, the transfer set,
+  per-file progress, and the status line; the manager dialog
+  only renders its snapshots.
 
 ## 5. Data layer (`src/core/data/`, `src/ui/data/`)
 

@@ -134,11 +134,6 @@ IconScheme AppSettings::resolvedIcons() const {
     return MaterialPalette::isDarkPalette(palette) ? IconScheme::Light : IconScheme::Dark;
 }
 
-AppSettings &AppSettings::shared() {
-    static AppSettings settings = AppSettings::fromStorage();
-    return settings;
-}
-
 QString AppSettings::storagePath() {
     if (qEnvironmentVariableIsSet("BAKAJITEN_SETTINGS")) {
         return qEnvironmentVariable("BAKAJITEN_SETTINGS");

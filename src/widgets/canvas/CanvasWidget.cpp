@@ -2,6 +2,7 @@
 
 #include "core/palette/MaterialPalette.h"
 #include "core/settings/Settings.h"
+#include "core/state/SettingsStore.h"
 
 #include <QFontMetrics>
 #include <QMouseEvent>
@@ -65,7 +66,7 @@ void CanvasWidget::paintEvent(QPaintEvent *) {
     const QRectF r = rect();
     // Drawing-surface roles from the palette (the paper flag
     // picks the variant, like a theme would).
-    const bool darkPaper = AppSettings::shared().resolvedIcons() == IconScheme::Light;
+    const bool darkPaper = SettingsStore::shared().current().resolvedIcons() == IconScheme::Light;
     const QColor paper = MaterialPalette::canvasPaper(darkPaper);
     const QColor gridColor = MaterialPalette::canvasGrid(darkPaper);
     const QColor helpColor = MaterialPalette::canvasHelp();

@@ -5,6 +5,8 @@
 #include "core/data/DataPaths.h"
 #include "core/dictionary/DictionaryModel.h"
 #include "core/dictionary/KanjiInfo.h"
+#include "core/state/SearchStore.h"
+#include "core/state/SettingsStore.h"
 #include "dev/UiForm.h"
 #include "ui/kanji/KanjiDialog.h"
 #include "util/Romaji.h"
@@ -15,6 +17,9 @@
 #include "widgets/toolbutton/ToolButtonFit.h"
 
 #include "dict.hpp"
+
+#include <rpp/operators/subscribe.hpp>
+#include <rppqt/rppqt.hpp>
 
 #include <QApplication>
 #include <QComboBox>
@@ -33,7 +38,6 @@
 #include <QTextBrowser>
 #include <QTextCursor>
 #include <QTextDocument>
-#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <Qt>
@@ -63,10 +67,17 @@ DictionaryWidget::DictionaryWidget(QWidget *parent) : QWidget(parent) {
     // Kanji hover cards (optional artifact — tooltips stay empty
     // without it, nothing else depends on it).
     kanjiInfo = new KanjiInfo(this);
-    searchDebounce = new QTimer(this);
-    searchDebounce->setSingleShot(true);
-    searchDebounce->setInterval(200);
-    connect(searchDebounce, &QTimer::timeout, this, &DictionaryWidget::onSearch);
+    // Search inputs live in the store singleton: reset them so
+    // every window (and every test window in-process) starts from
+    // the defaults, then execute its processed requests.
+    SearchStore::shared().setText(QString());
+    SearchStore::shared().setFlags(dict::SearchMode::kPrefix, false);
+    SearchStore::shared().setScope(0);
+    SearchStore::shared().subscribe(
+        this, [this](const SearchStore::Request &request) { onRequest(request); });
+    // Live reading-script switch: the store publishes settings
+    // accepts, so the MainWindow accept path only assigns.
+    SettingsStore::shared().subscribe(this, [this](const AppSettings &) { refreshReadings(); });
     wireUi();
 
     connect(model, &DictionaryModel::loaded, this, &DictionaryWidget::onDictionariesLoaded);
@@ -88,14 +99,15 @@ void DictionaryWidget::wireUi() {
     // `DictionaryTable` itself; scroll modes stay declarative in the
     // .ui. Only model + delegate re-install per form here.
     ui->resultsTable->setItemDelegate(delegate);
-    // Mode button state survives dev reloads (the member owns
-    // it, not the buttons). No autoExclusive: both on reads
-    // substring, so exclusivity is manual in the slot.
+    // Mode button state syncs from the store (dev reloads
+    // rebuild the buttons). No autoExclusive: both on reads
+    // substring, so exclusivity is manual in the sync below.
     {
         const QSignalBlocker blockP(ui->prefixButton);
         const QSignalBlocker blockS(ui->suffixButton);
-        ui->prefixButton->setChecked(searchMode != dict::SearchMode::kSuffix);
-        ui->suffixButton->setChecked(searchMode != dict::SearchMode::kPrefix);
+        const dict::SearchMode mode = SearchStore::shared().criteria().mode;
+        ui->prefixButton->setChecked(mode != dict::SearchMode::kSuffix);
+        ui->suffixButton->setChecked(mode != dict::SearchMode::kPrefix);
     }
     // Square toolbar icons (texts live in tooltips instead):
     // re-applied per form, re-tinted on theme switches below.
@@ -104,8 +116,13 @@ void DictionaryWidget::wireUi() {
     ButtonIcon::apply(ui->recognizerButton, QStringLiteral("pen"));
     ButtonIcon::apply(ui->japaneseButton, QStringLiteral("kana"));
     ButtonIcon::apply(ui->meaningButton, QStringLiteral("latin"));
+    // Search inputs publish into the store (rppqt signal
+    // sources); the store's processed stream comes back through
+    // onRequest. Sender-death breaks these bindings, so dev
+    // reloads only ever feed the live form.
+    rppqt::source::from_signal(*ui->searchInput, &QLineEdit::textChanged) |
+        rpp::operators::subscribe([](const QString &text) { SearchStore::shared().setText(text); });
     connect(ui->searchInput, &QLineEdit::returnPressed, this, &DictionaryWidget::onSearch);
-    connect(ui->searchInput, &QLineEdit::textChanged, this, &DictionaryWidget::onQueryChanged);
     // Hero field: fixed 16pt in the fixed 40px row (the app font
     // would look lost at 9pt). Derived from the application font so
     // the fallback chain (e.g. embedded Noto) survives the resize.
@@ -121,8 +138,22 @@ void DictionaryWidget::wireUi() {
     } else {
         kanaInput->rebind(ui->searchInput);
     }
-    connect(ui->prefixButton, &QPushButton::toggled, this, &DictionaryWidget::onSearchModeChanged);
-    connect(ui->suffixButton, &QPushButton::toggled, this, &DictionaryWidget::onSearchModeChanged);
+    // Independent toggles: prefix-only, suffix-only, both on
+    // (substring), or neither (exact forms). Every combination is
+    // a mode; the store re-searches on change.
+    auto syncMode = [this] {
+        const bool prefix = ui->prefixButton->isChecked();
+        const bool suffix = ui->suffixButton->isChecked();
+        const dict::SearchMode mode = prefix && suffix ? dict::SearchMode::kMiddle
+                                      : suffix         ? dict::SearchMode::kSuffix
+                                      : prefix         ? dict::SearchMode::kPrefix
+                                                       : dict::SearchMode::kExact;
+        SearchStore::shared().setFlags(mode, SearchStore::shared().criteria().meaning);
+    };
+    rppqt::source::from_signal(*ui->prefixButton, &QPushButton::toggled) |
+        rpp::operators::subscribe([syncMode](bool) { syncMode(); });
+    rppqt::source::from_signal(*ui->suffixButton, &QPushButton::toggled) |
+        rpp::operators::subscribe([syncMode](bool) { syncMode(); });
     connect(ui->japaneseButton, &QPushButton::toggled, this,
             &DictionaryWidget::onSearchTargetChanged);
     connect(ui->meaningButton, &QPushButton::toggled, this,
@@ -133,8 +164,18 @@ void DictionaryWidget::wireUi() {
     ui->scopeCombo->setItemData(0, tr("Search both dictionaries"), Qt::ToolTipRole);
     ui->scopeCombo->setItemData(1, tr("JMdict words only"), Qt::ToolTipRole);
     ui->scopeCombo->setItemData(2, tr("JMnedict names only"), Qt::ToolTipRole);
-    connect(ui->scopeCombo, &QComboBox::currentIndexChanged, this,
-            &DictionaryWidget::onScopeChanged);
+    // Exactly one dictionary at a time: missing files refuse at
+    // the edge (the option is disabled anyway), valid switches
+    // publish — the store's scope stream swaps the file.
+    rppqt::source::from_signal(*ui->scopeCombo, qOverload<int>(&QComboBox::currentIndexChanged)) |
+        rpp::operators::subscribe([this](int index) {
+            if (index < 0 || index > 2 || scopePath(index).isEmpty()) {
+                const QSignalBlocker block(ui->scopeCombo);
+                ui->scopeCombo->setCurrentIndex(SearchStore::shared().scope());
+                return;
+            }
+            SearchStore::shared().setScope(index);
+        });
     applyScope();
     connect(ui->recognizerButton, &QPushButton::toggled, this, &DictionaryWidget::toggleRecognizer);
     // Toolbar buttons stay square at any interface font (fixed .ui
@@ -270,23 +311,23 @@ void DictionaryWidget::refreshArtifacts() {
     kokugoPath = existingPath(QStringLiteral("kokugo.bin"));
     setComboItemEnabled(ui->scopeCombo, 1, !namesPath.isEmpty());
     setComboItemEnabled(ui->scopeCombo, 2, !kokugoPath.isEmpty());
-    QString path = scopePath(scopeIndex);
+    QString path = scopePath(SearchStore::shared().scope());
     if (path.isEmpty()) {
         if (wordsPath.isEmpty()) {
             ui->statusLabel->setText(
                 tr("No dictionaries yet — open Help > Dictionaries to download them."));
             return;
         }
-        scopeIndex = 0;
+        SearchStore::shared().setScope(0);
         applyScope();
         path = wordsPath;
     }
     if (kanjiDialog != nullptr) {
         kanjiDialog->reloadDictionary(path);
     }
-    ui->statusLabel->setText(tr("Loading %1…").arg(scopeLabel(scopeIndex)));
+    ui->statusLabel->setText(tr("Loading %1…").arg(scopeLabel(SearchStore::shared().scope())));
     const QString raw = ui->searchInput->text().trimmed();
-    pendingQuery = meaningMode ? raw : KanaInput::searchText(raw);
+    pendingQuery = SearchStore::shared().criteria().meaning ? raw : KanaInput::searchText(raw);
     model->clear();
     model->loadAsync(path);
 }

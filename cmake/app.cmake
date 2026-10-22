@@ -13,6 +13,23 @@ add_library(appsettings STATIC
 target_include_directories(appsettings PUBLIC src)
 target_link_libraries(appsettings PUBLIC Qt6::Widgets yaml-cpp::yaml-cpp ZLIB::ZLIB)
 
+# Reactive state singletons (Search, Settings, Data): above the
+# UniFFI bindings (SearchStore speaks dict::SearchMode) and above
+# appsettings (SettingsStore owns the AppSettings value). Both the
+# app and the widget tests link here.
+add_library(appstate STATIC
+    src/core/state/SearchStore.cpp
+    src/core/state/SettingsStore.cpp
+    src/core/state/DataStore.cpp
+)
+target_include_directories(appstate PUBLIC src)
+target_link_libraries(appstate PUBLIC appsettings uniffi_dict rpp rppqt)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GCC 16 false-positive: -Wstringop-overflow inside libstdc++
+    # atomics inlined through RPP subjects (one note per setter).
+    target_compile_options(appstate PRIVATE -Wno-stringop-overflow)
+endif()
+
 add_executable(bakajiten
     src/main.cpp
     src/ui/mainwindow/MainWindow.cpp
@@ -81,7 +98,7 @@ target_include_directories(bakajiten PRIVATE src)
 # CXX-Qt crate target. Link the top Rust crate only (`libdict`
 # bundles `librecognizer` into its staticlib — linking both
 # duplicates the UniFFI symbols).
-target_link_libraries(bakajiten PRIVATE Qt6::Widgets Qt6::Svg Qt6::Network appsettings dict recognizer uniffi_recognizer uniffi_dict)
+target_link_libraries(bakajiten PRIVATE Qt6::Widgets Qt6::Svg Qt6::Network appsettings appstate dict recognizer uniffi_recognizer uniffi_dict)
 # Optional embedded CJK fallback (Noto Sans JP): downloaded once at
 # configure time into the build tree and compiled into the binary via
 # a generated .qrc. Off everywhere except the Windows cross build

@@ -1,6 +1,7 @@
 #include "ui/data/DictionaryManagerDialog.h"
 
 #include "core/data/DataPaths.h"
+#include "core/state/DataStore.h"
 #include "dev/UiForm.h"
 #include "ui/data/DataChecker.h"
 #include "ui/data/DataDownloader.h"
@@ -13,6 +14,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <Qt>
 
 namespace {
 QString formatMb(qint64 bytes) {
@@ -90,25 +92,26 @@ DictionaryManagerDialog::DictionaryManagerDialog(QWidget *parent) : QDialog(pare
     connect(downloader, &DataDownloader::finished, this,
             &DictionaryManagerDialog::onDownloadFinished);
     connect(downloader, &DataDownloader::failed, this, &DictionaryManagerDialog::onDownloadFailed);
+    // State lives in the DataStore singleton (last check survives
+    // reopening); this view only renders its snapshots.
+    DataStore::shared().subscribe(this, [this](const DataStore::Snapshot &) { renderRows(); });
     renderRows();
     onCheck();
 }
 
 void DictionaryManagerDialog::onCheck() {
-    infoLabel->setText(tr("Checking for dictionaries…"));
+    DataStore::shared().setNotice(tr("Checking for dictionaries…"));
     checker->check();
 }
 
 void DictionaryManagerDialog::onChecked(const DataManifest &remoteIn, const QByteArray &bytes) {
-    remote = remoteIn;
-    remoteBytes = bytes;
-    renderRows();
+    DataStore::shared().setRemote(remoteIn, bytes);
     const QString date = remoteIn.buildDate.isEmpty() ? tr("unknown date") : remoteIn.buildDate;
-    infoLabel->setText(tr("Dictionaries as of %1.").arg(date));
+    DataStore::shared().setNotice(tr("Dictionaries as of %1.").arg(date));
 }
 
 void DictionaryManagerDialog::onCheckFailed(const QString &reason) {
-    infoLabel->setText(tr("Update check failed: %1").arg(reason));
+    DataStore::shared().setNotice(tr("Update check failed: %1").arg(reason));
 }
 
 void DictionaryManagerDialog::onRowAction(const QString &file) { downloadFiles({file}); }
@@ -124,7 +127,7 @@ void DictionaryManagerDialog::onRemoveAction(const QString &file) {
         return;
     }
     QFile::remove(DataPaths::filePath(file));
-    renderRows();
+    DataStore::shared().refresh();
 }
 
 void DictionaryManagerDialog::onRequiredAction() { downloadFiles(pendingRequired()); }
@@ -140,31 +143,26 @@ void DictionaryManagerDialog::onClearAllAction() {
     for (const QString &file : DataPaths::allFiles()) {
         QFile::remove(DataPaths::filePath(file));
     }
-    renderRows();
+    DataStore::shared().refresh();
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void DictionaryManagerDialog::onDownloadProgress(const QString &file, qint64 received,
                                                  qint64 total) {
-    activeFiles.insert(file);
-    refreshBusy();
-    DictionaryManagerRow *row = rows.value(file);
-    if (row == nullptr) {
-        return;
-    }
+    const DataStore::Snapshot before = DataStore::shared().current();
+    DataStore::shared().setProgress(file, received, total);
     // Transport is the `.gz`: compressed size is the honest total.
-    const qint64 known = total > 0 ? total : remote.has_value() ? remote->files.value(file).gz : 0;
-    row->setProgressVisible(true);
-    row->setProgress(known > 0 ? static_cast<int>(qMin(received, known) * 1000 / known) : 0);
-    infoLabel->setText(tr("Downloading %1… %2 / %3")
-                           .arg(DataPaths::displayName(file), formatMb(received), formatMb(known)));
+    const qint64 known = total > 0                   ? total
+                         : before.remote.has_value() ? before.remote->files.value(file).gz
+                                                     : 0;
+    DataStore::shared().setNotice(
+        tr("Downloading %1… %2 / %3")
+            .arg(DataPaths::displayName(file), formatMb(received), formatMb(known)));
 }
 
 void DictionaryManagerDialog::onDownloadFinished() {
-    activeFiles.clear();
-    refreshBusy();
-    renderRows();
-    infoLabel->setText(tr("Dictionaries are up to date."));
+    DataStore::shared().clearBusy();
+    DataStore::shared().setNotice(tr("Dictionaries are up to date."));
     if (downloadsLanded) {
         downloadsLanded = false;
         emit dataChanged();
@@ -172,14 +170,12 @@ void DictionaryManagerDialog::onDownloadFinished() {
 }
 
 void DictionaryManagerDialog::onDownloadFailed(const QString &reason) {
-    activeFiles.clear();
-    refreshBusy();
-    renderRows();
-    infoLabel->setText(tr("Download failed: %1").arg(reason));
+    DataStore::shared().clearBusy();
+    DataStore::shared().setNotice(tr("Download failed: %1").arg(reason));
 }
 
 QStringList DictionaryManagerDialog::outdatedAll() const {
-    const std::optional<DataManifest> snapshot = remote;
+    const std::optional<DataManifest> snapshot = DataStore::shared().current().remote;
     QStringList stale;
     if (!snapshot.has_value()) {
         return stale;
@@ -196,7 +192,7 @@ QStringList DictionaryManagerDialog::outdatedAll() const {
 }
 
 QStringList DictionaryManagerDialog::pendingRequired() const {
-    const std::optional<DataManifest> snapshot = remote;
+    const std::optional<DataManifest> snapshot = DataStore::shared().current().remote;
     QStringList pending;
     if (!snapshot.has_value()) {
         return pending;
@@ -211,20 +207,19 @@ QStringList DictionaryManagerDialog::pendingRequired() const {
 }
 
 void DictionaryManagerDialog::downloadFiles(const QStringList &files) {
-    const std::optional<DataManifest> snapshot = remote;
-    if (!snapshot.has_value() || files.isEmpty()) {
+    const DataStore::Snapshot snapshot = DataStore::shared().current();
+    if (!snapshot.remote.has_value() || files.isEmpty()) {
         return;
     }
-    for (const QString &file : files) {
-        activeFiles.insert(file);
-    }
-    refreshBusy();
-    downloader->download(*snapshot, remoteBytes, files);
+    downloader->download(*snapshot.remote, snapshot.remoteBytes, files);
 }
 
 void DictionaryManagerDialog::renderRows() {
+    const DataStore::Snapshot snapshot = DataStore::shared().current();
+    infoLabel->setText(snapshot.notice);
     const std::optional<DataManifest> local =
         DataManifestReader::readFile(DataPaths::manifestPath());
+    const std::optional<DataManifest> remote = snapshot.remote;
     for (const QString &file : DataPaths::allFiles()) {
         DictionaryManagerRow *row = rows.value(file);
         if (row == nullptr) {
@@ -233,15 +228,25 @@ void DictionaryManagerDialog::renderRows() {
         const QString path = DataPaths::filePath(file);
         const bool present = QFileInfo::exists(path);
         const bool required = DataPaths::requiredFiles().contains(file);
-        // Idle rows keep no progress space (shown again by the
-        // next progress signal).
-        row->setProgressVisible(false);
+        // Progress follows the transfer set (idle rows keep no
+        // progress space, shown again by the next signal).
+        const bool flying = snapshot.busy.contains(file);
+        row->setProgressVisible(flying);
+        if (flying) {
+            qint64 known = snapshot.total.value(file, 0);
+            if (known <= 0 && remote.has_value()) {
+                known = remote->files.value(file).gz;
+            }
+            const qint64 received = snapshot.received.value(file, 0);
+            row->setProgress(known > 0 ? static_cast<int>(qMin(received, known) * 1000 / known)
+                                       : 0);
+        }
         if (!remote.has_value()) {
             row->setStatus(present ? tr("Installed (%1)").arg(formatMb(QFileInfo(path).size()))
                                    : tr("Not downloaded"));
             row->setAction(tr("Download"), false);
             row->setRemoveVisible(present && !required);
-            row->setRemoveEnabled(present && !required);
+            row->setRemoveEnabled(!flying && present && !required);
             continue;
         }
         const DataFileEntry entry = remote->files.value(file);
@@ -249,7 +254,7 @@ void DictionaryManagerDialog::renderRows() {
             row->setStatus(tr("No longer published"));
             row->setAction(QStringLiteral("—"), false);
             row->setRemoveVisible(present && !required);
-            row->setRemoveEnabled(present && !required);
+            row->setRemoveEnabled(!flying && present && !required);
             continue;
         }
         const QString localVersion =
@@ -286,7 +291,7 @@ void DictionaryManagerDialog::renderRows() {
             row->setAction(entry.gz > 0 ? tr("Update (%1)").arg(formatMb(entry.gz)) : tr("Update"),
                            true);
             row->setRemoveVisible(present && !required);
-            row->setRemoveEnabled(present && !required);
+            row->setRemoveEnabled(!flying && present && !required);
             break;
         }
         case DataFileStatus::Current:
@@ -296,9 +301,10 @@ void DictionaryManagerDialog::renderRows() {
                                         : QStringLiteral(" (%1)").arg(localVersion)));
             row->setAction(tr("Up to date"), false);
             row->setRemoveVisible(present && !required);
-            row->setRemoveEnabled(present && !required);
+            row->setRemoveEnabled(!flying && present && !required);
             break;
         }
+        row->setActionEnabled(!flying && !row->isActionComplete());
     }
     const QStringList pending = pendingRequired();
     // Nothing on disk: no updates to check for, nothing to clear.
@@ -311,47 +317,30 @@ void DictionaryManagerDialog::renderRows() {
     }
     checkButton->setVisible(anyPresent);
     clearButton->setVisible(anyPresent);
+    const bool idle = snapshot.busy.isEmpty();
     requiredButton->setVisible(remote.has_value() && !pending.isEmpty());
     if (!remote.has_value() || pending.isEmpty()) {
-        requiredActionable = false;
+        requiredButton->setEnabled(false);
     } else {
         qint64 total = 0;
         for (const QString &file : pending) {
             total += remote->files.value(file).gz;
         }
         requiredButton->setText(tr("Download required (%1)").arg(formatMb(total)));
-        requiredButton->setEnabled(true);
-        requiredActionable = true;
+        requiredButton->setEnabled(idle);
     }
     const QStringList stale = outdatedAll();
     updateButton->setVisible(remote.has_value() && !stale.isEmpty());
     if (!remote.has_value() || stale.isEmpty()) {
-        updateActionable = false;
+        updateButton->setEnabled(false);
     } else {
         qint64 total = 0;
         for (const QString &file : stale) {
             total += remote->files.value(file).gz;
         }
         updateButton->setText(tr("Update all (%1)").arg(formatMb(total)));
-        updateButton->setEnabled(true);
-        updateActionable = true;
+        updateButton->setEnabled(idle);
     }
-}
-
-void DictionaryManagerDialog::refreshBusy() {
-    const bool any = !activeFiles.isEmpty();
-    checkButton->setEnabled(!any);
-    requiredButton->setEnabled(!any && requiredActionable);
-    updateButton->setEnabled(!any && updateActionable);
-    clearButton->setEnabled(!any);
-    for (const QString &file : DataPaths::allFiles()) {
-        DictionaryManagerRow *row = rows.value(file);
-        if (row == nullptr) {
-            continue;
-        }
-        const bool flying = activeFiles.contains(file);
-        row->setActionEnabled(!flying && !row->isActionComplete());
-        row->setRemoveEnabled(!flying && !DataPaths::requiredFiles().contains(file) &&
-                              QFileInfo::exists(DataPaths::filePath(file)));
-    }
+    checkButton->setEnabled(idle);
+    clearButton->setEnabled(idle);
 }

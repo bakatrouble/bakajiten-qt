@@ -14,6 +14,7 @@
 #include "core/data/DataPaths.h"
 #include "core/settings/MemorizedState.h"
 #include "core/settings/Settings.h"
+#include "core/state/SettingsStore.h"
 #include "dev/UiDev.h"
 #include "ui/data/DictionaryManagerDialog.h"
 #include "ui/dictionary/DictionaryWidget.h"
@@ -131,14 +132,14 @@ MainWindow::MainWindow(QWidget *parent)
     updateTimer = new QTimer(this);
     updateTimer->setInterval(3600 * 1000);
     connect(updateTimer, &QTimer::timeout, this, [this] {
-        if (AppSettings::shared().checkUpdates()) {
+        if (SettingsStore::shared().current().checkUpdates()) {
             updateChecker->check(false);
         }
     });
-    if (AppSettings::shared().checkUpdates()) {
+    if (SettingsStore::shared().current().checkUpdates()) {
         updateTimer->start();
         QTimer::singleShot(30000, this, [this] {
-            if (AppSettings::shared().checkUpdates()) {
+            if (SettingsStore::shared().current().checkUpdates()) {
                 updateChecker->check(false);
             }
         });
@@ -237,13 +238,15 @@ void MainWindow::openSettings() {
 /// Persist changed appearance; true when the scale changed and the
 /// window is closing for recreation. Unchanged is a no-op (false).
 bool MainWindow::applyAppearance(const AppSettings &selected) {
-    if (selected == AppSettings::shared()) {
+    if (selected == SettingsStore::shared().current()) {
         return false;
     }
     const bool scaleChanged =
-        !qFuzzyCompare(selected.scale() + 1.0, AppSettings::shared().scale() + 1.0);
-    const double oldScale = AppSettings::shared().scale();
-    AppSettings::shared() = selected;
+        !qFuzzyCompare(selected.scale() + 1.0, SettingsStore::shared().current().scale() + 1.0);
+    const double oldScale = SettingsStore::shared().current().scale();
+    // Publish first (readings repaint through the subscription),
+    // then persist the same value.
+    SettingsStore::shared().set(selected);
     AppSettings::shared().save();
     if (scaleChanged) {
         // Memorized widths are old-scale pixels: rescale once so
@@ -256,7 +259,6 @@ bool MainWindow::applyAppearance(const AppSettings &selected) {
         // Readings re-render the same way (no recreation needed).
         selected.applyStyle();
         recognizer->update();
-        ui->centralwidget->refreshReadings();
         return false;
     }
     // Scale moves every geometry: apply the font now and recreate

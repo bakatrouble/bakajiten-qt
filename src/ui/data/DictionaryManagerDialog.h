@@ -2,7 +2,6 @@
 
 #include <QDialog>
 #include <QMap>
-#include <QSet>
 #include <QString>
 
 #include <optional>
@@ -29,8 +28,9 @@ class QVBoxLayout;
 /// check, or a full cache clear. Nothing downloads without a
 /// click — not even on first run. Names/kokugo are opt-in (never
 /// auto-fetched). Removes ask first (required files have no
-/// Remove button at all). Emits dataChanged when files land so
-/// the views reload.
+/// Remove button at all). State lives in the DataStore singleton
+/// (this view only renders its snapshots); emits dataChanged
+/// when files land so the views reload.
 class DictionaryManagerDialog : public QDialog {
     Q_OBJECT
 public:
@@ -54,8 +54,9 @@ private slots:
     void onDownloadFailed(const QString &reason);
 
 private:
-    /// Re-render every row from local disk (+ remote when known).
-    /// Buttons stay put throughout: only text and enabled change.
+    /// Re-render every row from the DataStore snapshot (+ local
+    /// disk); runs on every store emission. Buttons stay put:
+    /// only text, visibility, and enabled change.
     void renderRows();
     /// Required files that are not current (missing or outdated).
     QStringList pendingRequired() const;
@@ -63,7 +64,6 @@ private:
     QStringList outdatedAll() const;
     /// Start downloading these manifest files.
     void downloadFiles(const QStringList &files);
-    void refreshBusy();
 
     Ui::DictionaryManagerDialog *ui = nullptr;
     QWidget *devForm = nullptr;
@@ -76,13 +76,7 @@ private:
     QMap<QString, DictionaryManagerRow *> rows;
     DataChecker *checker = nullptr;
     DataDownloader *downloader = nullptr;
-    std::optional<DataManifest> remote;
-    QByteArray remoteBytes;
-    QSet<QString> activeFiles;
+    /// Set when a transfer lands (control flow for the dataChanged
+    /// emit — not shared state, so it stays local).
     bool downloadsLanded = false;
-    /// Required batch actionable (set by renderRows; drives the
-    /// required button without reading its text back).
-    bool requiredActionable = false;
-    /// Update-all actionable (same pattern for stale files).
-    bool updateActionable = false;
 };

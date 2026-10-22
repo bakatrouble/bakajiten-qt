@@ -97,7 +97,7 @@ if(BUILD_QT_TESTS)
         src/widgets/canvas/CanvasWidget.cpp
     )
     target_include_directories(test_mainwindow PRIVATE src)
-    target_link_libraries(test_mainwindow PRIVATE appsettings dict recognizer uniffi_recognizer uniffi_dict Qt6::Widgets Qt6::Svg Qt6::Network Qt6::Test)
+    target_link_libraries(test_mainwindow PRIVATE appsettings appstate dict recognizer uniffi_recognizer uniffi_dict Qt6::Widgets Qt6::Svg Qt6::Network Qt6::Test)
     target_compile_definitions(test_mainwindow PRIVATE "BAKAJITEN_UPDATE_ARTIFACT=\"appimage\"")
     add_test(NAME data_manifest COMMAND test_mainwindow data)
     set_tests_properties(data_manifest PROPERTIES

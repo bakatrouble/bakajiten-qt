@@ -21,6 +21,21 @@ if(NOT Corrosion_FOUND)
     FetchContent_MakeAvailable(Corrosion)
 endif()
 
+# ReactivePlusPlus + its rppqt Qt bridge (main-thread scheduler,
+# Qt-signal sources): the reactive state layer in
+# src/core/state/ (singleton stores). Header-only, pinned
+# tarball like everything else versioned here.
+include(FetchContent)
+FetchContent_Declare(
+    ReactivePlusPlus
+    URL https://github.com/AlexInLog/ReactivePlusPlus/archive/refs/tags/v2.2.3.tar.gz
+    URL_HASH SHA256=d66507538e75f61569acbb4d5e26e18adf839791120688693d2fe8da955236ea
+)
+set(RPP_BUILD_TESTS OFF)
+set(RPP_BUILD_BENCHMARKS OFF)
+set(RPP_BUILD_EXAMPLES OFF)
+FetchContent_MakeAvailable(ReactivePlusPlus)
+
 # Provides the UniFFI scaffolding symbols the generated bindings
 # call into; the recognizer itself is header-driven from the
 # build-tree bindings (see uniffi.cmake).

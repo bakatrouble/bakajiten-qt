@@ -3,6 +3,7 @@
 #include "ui_DictionaryWidget.h"
 
 #include "core/dictionary/DictionaryModel.h"
+#include "core/state/SearchStore.h"
 
 #include "ui/kanji/KanjiDialog.h"
 #include "widgets/input/KanaInput.h"
@@ -13,7 +14,6 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QTimer>
 #include <Qt>
 
 void DictionaryWidget::submit(const QString &query) {
@@ -35,16 +35,45 @@ void DictionaryWidget::refreshReadings() {
 }
 
 void DictionaryWidget::onSearch() {
-    searchDebounce->stop();
+    // Immediate path (Enter, candidate pick, reload): run the
+    // store's current inputs now, bypassing the text debounce.
+    SearchStore::Request request;
+    request.text = SearchStore::shared().text();
+    const SearchStore::Flags flags = SearchStore::shared().criteria();
+    request.mode = flags.mode;
+    request.meaning = flags.meaning;
+    request.scope = SearchStore::shared().scope();
+    request.trigger = SearchStore::Trigger::Text;
+    if (executeRequest(request)) {
+        lastImmediate = request.text;
+    }
+}
+
+void DictionaryWidget::onRequest(const SearchStore::Request &request) {
+    if (request.trigger == SearchStore::Trigger::Scope) {
+        applyScopeRequest(request);
+        return;
+    }
+    if (request.trigger == SearchStore::Trigger::Text && request.text == lastImmediate) {
+        // Already ran through the immediate path (Enter): the old
+        // code stopped the debounce timer there — drop the echo.
+        return;
+    }
+    if (executeRequest(request)) {
+        lastImmediate = request.text;
+    }
+}
+
+bool DictionaryWidget::executeRequest(const SearchStore::Request &request) {
     // Romaji converts at the edge (typed, pasted, or candidate-);
     // kana passes through, so every input path searches converted.
     // Meaning mode takes the literal text (conversion disabled).
-    const QString raw = ui->searchInput->text().trimmed();
-    const QString query = meaningMode ? raw : KanaInput::searchText(raw);
+    const QString raw = request.text.trimmed();
+    const QString query = request.meaning ? raw : KanaInput::searchText(raw);
     pendingQuery.clear();
     if (query.isEmpty()) {
         model->clear();
-        return;
+        return true;
     }
     if (kanaInput != nullptr && kanaInput->hasPending()) {
         // Mid-composition: no search. Batch conversion would
@@ -52,61 +81,36 @@ void DictionaryWidget::onSearch() {
         // keystroke re-triggers through the debounce.
         // (Always settled in meaning mode — hasPending is false
         // with conversion disabled.)
-        return;
+        return false;
     }
     if (!model->isReady()) {
         // Loading: park the query and run it when the backend lands.
         pendingQuery = query;
         ui->statusLabel->setText(tr("Still loading dictionaries…"));
-        return;
+        return false;
     }
-    if (meaningMode) {
+    if (request.meaning) {
         model->searchMeaning(query);
     } else {
-        model->search(query, searchMode);
+        model->search(query, request.mode);
     }
-}
-
-void DictionaryWidget::onQueryChanged(const QString &text) {
-    if (text.trimmed().isEmpty()) {
-        searchDebounce->stop();
-        onSearch();
-        return;
-    }
-    searchDebounce->start();
-}
-
-void DictionaryWidget::onSearchModeChanged() {
-    // Independent toggles: prefix-only, suffix-only, both on
-    // (substring), or neither (exact forms only). Every
-    // combination re-searches.
-    const bool prefix = ui->prefixButton->isChecked();
-    const bool suffix = ui->suffixButton->isChecked();
-    const dict::SearchMode mode = prefix && suffix ? dict::SearchMode::kMiddle
-                                  : suffix         ? dict::SearchMode::kSuffix
-                                  : prefix         ? dict::SearchMode::kPrefix
-                                                   : dict::SearchMode::kExact;
-    if (searchMode == mode) {
-        return;
-    }
-    searchMode = mode;
-    onSearch();
+    return true;
 }
 
 void DictionaryWidget::applySearchTarget() {
-    // Member owns the state (dev reloads rebuild the buttons, like
-    // the edge mode above). Meaning mode is substring-only, so the
-    // edge buttons go dark but keep their checks for the way back.
+    // Radio pair, exactly one on — the store owns the target (dev
+    // reloads rebuild the buttons, like the edge mode below).
+    const bool meaning = SearchStore::shared().criteria().meaning;
     {
         const QSignalBlocker blockJ(ui->japaneseButton);
         const QSignalBlocker blockM(ui->meaningButton);
-        ui->japaneseButton->setChecked(!meaningMode);
-        ui->meaningButton->setChecked(meaningMode);
+        ui->japaneseButton->setChecked(!meaning);
+        ui->meaningButton->setChecked(meaning);
     }
-    ui->prefixButton->setEnabled(!meaningMode);
-    ui->suffixButton->setEnabled(!meaningMode);
+    ui->prefixButton->setEnabled(!meaning);
+    ui->suffixButton->setEnabled(!meaning);
     if (kanaInput != nullptr) {
-        kanaInput->setConversionEnabled(!meaningMode);
+        kanaInput->setConversionEnabled(!meaning);
     }
 }
 
@@ -119,10 +123,10 @@ void DictionaryWidget::fitTargetButtons() {
 }
 
 void DictionaryWidget::applyScope() {
-    // Member owns the state (dev reloads rebuild the combo, like
-    // the modes above).
+    // The store owns the scope (dev reloads rebuild the combo,
+    // like the modes above).
     const QSignalBlocker block(ui->scopeCombo);
-    ui->scopeCombo->setCurrentIndex(scopeIndex);
+    ui->scopeCombo->setCurrentIndex(SearchStore::shared().scope());
 }
 
 QString DictionaryWidget::scopePath(int index) const {
@@ -131,32 +135,22 @@ QString DictionaryWidget::scopePath(int index) const {
 
 QString DictionaryWidget::scopeLabel(int index) const { return ui->scopeCombo->itemText(index); }
 
-void DictionaryWidget::onScopeChanged(int index) {
-    // Exactly one dictionary at a time: swap the loaded file, park
-    // the live query, and re-search once it lands (the model
-    // clears stale file-relative rows first). Never clears the
-    // field — scope refines, it doesn't change the query language.
-    if (index < 0 || index > 2 || index == scopeIndex) {
-        return;
-    }
-    const QString path = scopePath(index);
-    if (path.isEmpty()) {
-        // Missing file: refuse (the option is disabled anyway).
-        const QSignalBlocker block(ui->scopeCombo);
-        ui->scopeCombo->setCurrentIndex(scopeIndex);
-        return;
-    }
-    scopeIndex = index;
+void DictionaryWidget::applyScopeRequest(const SearchStore::Request &request) {
+    // Scope refines, it doesn't change the query language: the
+    // file swaps, the live query re-searches once it lands. Only
+    // valid scopes publish (the combo binding refuses missing
+    // files), so the path below always resolves.
+    const int index = request.scope;
     model->clear();
     if (kanjiDialog != nullptr) {
-        kanjiDialog->reloadDictionary(path);
+        kanjiDialog->reloadDictionary(scopePath(index));
     }
     ui->statusLabel->setText(tr("Loading %1…").arg(scopeLabel(index)));
-    const QString raw = ui->searchInput->text().trimmed();
-    pendingQuery = meaningMode ? raw : KanaInput::searchText(raw);
+    const QString raw = request.text.trimmed();
+    pendingQuery = request.meaning ? raw : KanaInput::searchText(raw);
     // Empty parks nothing (rows already cleared); either way the
     // file swaps so the next query hits it.
-    model->loadAsync(path);
+    model->loadAsync(scopePath(index));
 }
 
 void DictionaryWidget::onSearchTargetChanged() {
@@ -176,10 +170,11 @@ void DictionaryWidget::onSearchTargetChanged() {
         const QSignalBlocker block(meaning ? ui->japaneseButton : ui->meaningButton);
         (meaning ? ui->japaneseButton : ui->meaningButton)->setChecked(false);
     }
-    if (meaningMode == meaning) {
+    const SearchStore::Flags flags = SearchStore::shared().criteria();
+    if (flags.meaning == meaning) {
         return;
     }
-    meaningMode = meaning;
+    SearchStore::shared().setFlags(flags.mode, meaning);
     applySearchTarget();
     // Queries don't carry across modes (romaji one way, English
     // the other): the emptying textChanged clears the rows through
@@ -192,13 +187,15 @@ void DictionaryWidget::onDictionariesLoaded(bool ok) {
         ui->statusLabel->setText(tr("Could not read the dictionary file."));
         return;
     }
-    ui->statusLabel->setText(
-        tr("%1 entries · %2").arg(model->entryCount()).arg(scopeLabel(scopeIndex)));
+    const SearchStore::Flags flags = SearchStore::shared().criteria();
+    ui->statusLabel->setText(tr("%1 entries · %2")
+                                 .arg(model->entryCount())
+                                 .arg(scopeLabel(SearchStore::shared().scope())));
     if (!pendingQuery.isEmpty()) {
-        if (meaningMode) {
+        if (flags.meaning) {
             model->searchMeaning(pendingQuery);
         } else {
-            model->search(pendingQuery, searchMode);
+            model->search(pendingQuery, flags.mode);
         }
         pendingQuery.clear();
     }

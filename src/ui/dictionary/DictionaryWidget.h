@@ -2,6 +2,8 @@
 
 #include "dict.hpp"
 
+#include "core/state/SearchStore.h"
+
 #include <QVector>
 #include <QWidget>
 
@@ -15,7 +17,6 @@ class KanjiDialog;
 class KanjiInfo;
 class KanjiTooltip;
 class QLineEdit;
-class QTimer;
 class QToolButton;
 struct ArticleDisplay;
 struct ElementDisplay;
@@ -91,21 +92,27 @@ signals:
     void toggleRecognizer(bool checked);
 
 private slots:
+    /// Immediate search (Enter, candidate pick, reload): runs the
+    /// store's current inputs now instead of waiting out the text
+    /// debounce.
     void onSearch();
-    /// Query text changed: restart the debounce timer (clears
-    /// immediately when emptied).
-    void onQueryChanged(const QString &text);
-    /// Prefix/suffix mode toggled: every combination is a mode
-    /// (both on: substring, neither: exact). Re-searches on change.
-    void onSearchModeChanged();
+    /// Processed store request: text/flags search, or the scope
+    /// file swap. The store owns the inputs (debounce + routing);
+    /// this only executes.
+    void onRequest(const SearchStore::Request &request);
     /// Japanese/meaning target toggled: radio pair, exactly one on.
     /// Meaning mode disables the edge buttons and kana conversion;
     /// any switch clears the field (queries don't carry across).
     void onSearchTargetChanged();
-    /// Dictionary scope changed (English/Names/Kokugo): swaps the
+    /// Dictionary scope switched (English/Names/Kokugo): swaps the
     /// loaded file and re-searches the live query (never clears —
     /// scope refines, it doesn't change the query language).
-    void onScopeChanged(int index);
+    void applyScopeRequest(const SearchStore::Request &request);
+    /// Run one processed request against the model (shared by the
+    /// immediate path and the store stream). True when it searched
+    /// or cleared (false when parked behind loading or
+    /// mid-composition — the retrigger still owns the search).
+    bool executeRequest(const SearchStore::Request &request);
     /// Row selection moved: show and render the article pane, or
     /// hide it when nothing is selected.
     void onSelectionChanged();
@@ -123,18 +130,19 @@ private slots:
     void onSearchFinished(int hits, double searchMs);
 
 private:
-    /// Connect the single search signal. Runs once per form: initial
-    /// build and every dev reload.
+    /// Bind the search inputs to the store (rppqt signal
+    /// sources). Runs once per form: initial build and every dev
+    /// reload.
     void wireUi();
     /// Sync the target buttons, edge-button enables, and kana
-    /// conversion from `meaningMode`. The member owns the state
+    /// conversion from the store. The store owns the state
     /// (dev reloads rebuild the buttons); runs in wireUi and on
     /// every target toggle.
     void applySearchTarget();
     /// Size the target toggles: text width fits, height matches
     /// the square siblings. Runs after every fitToolButtons.
     void fitTargetButtons();
-    /// Sync the scope combo from `scopeIndex`. The member owns the
+    /// Sync the scope combo from the store. The store owns the
     /// state (dev reloads rebuild the combo); runs in wireUi.
     void applyScope();
     /// Artifact path for a scope index (empty when that file is
@@ -152,17 +160,10 @@ private:
     Ui::DictionaryWidget *ui = nullptr;
     /// Loader-built form (dev only; null with compiled uic).
     QWidget *devForm = nullptr;
-    /// Search edge mode (prefix/suffix buttons; both on reads
-    /// substring).
-    dict::SearchMode searchMode = dict::SearchMode::kPrefix;
-    /// Meaning (English gloss) search instead of Japanese. Owns the
-    /// target buttons' state across dev reloads, like searchMode.
-    bool meaningMode = false;
-    /// Dictionary scope: index into the combo (0 English/JMdict,
-    /// 1 Names/JMnedict, 2 Kokugo). Exactly one dictionary is ever
-    /// loaded; switching swaps the file. Owns the combo state
-    /// across dev reloads, like the modes above.
-    int scopeIndex = 0;
+    /// Search inputs (edge mode, target, scope, field text) live in
+    /// the SearchStore singleton — fresh widgets reset it below so
+    /// every window starts from the defaults, and dev reloads
+    /// re-sync the rebuilt controls from it.
     /// Resolved artifact paths (empty when the file is missing;
     /// the combo option is disabled then).
     QString wordsPath;
@@ -170,6 +171,12 @@ private:
     QString kokugoPath;
     /// Query typed while artifacts load: run once ready.
     QString pendingQuery;
+    /// Last text actually searched or cleared (immediate and
+    /// debounced alike): the debounce equivalent of stopping the
+    /// old QTimer on Enter — a debounced duplicate of an
+    /// already-run query is dropped instead of replacing rows a
+    /// second time.
+    QString lastImmediate;
     /// Results model (owns its dict thread; outlives the form across
     /// dev reloads).
     DictionaryModel *model = nullptr;
@@ -184,7 +191,4 @@ private:
     /// Article dismiss chip (overlay child of the article viewport;
     /// rebuilt per form like the rest of `ui`).
     QToolButton *articleClose = nullptr;
-    /// Live-search debounce: restarted per keystroke, fires
-    /// `onSearch` (Enter bypasses it).
-    QTimer *searchDebounce = nullptr;
 };

@@ -1,12 +1,13 @@
 #include "util/Romaji.h"
 
 #include "core/settings/Settings.h"
+#include "core/state/SettingsStore.h"
 #include "dict.hpp"
 
 bool Romaji::isKana(const QString &s) { return dict::is_kana(s.toStdString()); }
 
 QString Romaji::displayReading(const QString &raw) {
-    switch (AppSettings::shared().reading()) {
+    switch (SettingsStore::shared().current().reading()) {
     case ReadingDisplay::Hepburn:
         return toRomaji(raw, RomajiStyle::Hepburn);
     case ReadingDisplay::Kunrei:
