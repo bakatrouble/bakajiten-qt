@@ -62,17 +62,16 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow), recognizer(nullptr) {
     ui->setupUi(this);
 
-    // Floating panel parented to the .ui's central widget.
+    // Tooltip popup parented to the .ui's central widget (the
+    // transient parent Wayland positions it against).
     recognizer = new RecognizerWidget(ui->centralwidget);
 
-    // Floating panel: positioned on every open (top-left at the
-    // open button's bottom-left, clamped into the central widget).
+    // Tooltip popup: positioned on every open (top-left at the
+    // open button's bottom-left, clamped into the screen).
     // (Parent comes from the .ui's central widget.) It sizes itself:
-    // persisted size if any, else the default — the form fills the
-    // shell, but nothing sizes the shell itself (it is a free child,
-    // not in any layout). Hidden by default: the search button
-    // opens it.
-    // Explicit hide: a never-shown child would implicitly show with
+    // persisted size if any, else the default. Hidden by default:
+    // the search button opens it.
+    // Explicit hide: a never-shown popup would implicitly show with
     // its parent, defeating hidden-by-default.
     recognizer->hide();
 
@@ -153,6 +152,12 @@ MainWindow::MainWindow(QWidget *parent)
             &DictionaryWidget::submit);
     connect(recognizer, &RecognizerWidget::candidateDoubleClicked, ui->centralwidget,
             &DictionaryWidget::openKanjiInfo);
+    connect(recognizer, &RecognizerWidget::queryCursorLeft, ui->centralwidget,
+            &DictionaryWidget::moveCursorLeft);
+    connect(recognizer, &RecognizerWidget::queryCursorRight, ui->centralwidget,
+            &DictionaryWidget::moveCursorRight);
+    connect(recognizer, &RecognizerWidget::queryBackspace, ui->centralwidget,
+            &DictionaryWidget::backspaceAtCursor);
     connect(ui->centralwidget, &DictionaryWidget::toggleRecognizer, this,
             &MainWindow::toggleRecognizer);
     // First-run data: required artifacts missing means the
@@ -398,8 +403,9 @@ void MainWindow::reloadDevUi() {
     // point at dead widgets — rebuild it over the fresh ones.
     delete kanjiHover;
     kanjiHover = new KanjiHover(this, ui->centralwidget->kanjiData());
-    // The rebuilt search form is added last, so it would cover the
-    // sibling panel without this.
+    // The rebuilt search form is added last; reassert the popup
+    // above it (popups stack over the parent, but the fresh form
+    // can still claim the top child slot).
     recognizer->raise();
 }
 

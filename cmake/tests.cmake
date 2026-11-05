@@ -13,8 +13,6 @@ if(BUILD_QT_TESTS)
         tests/TestGzip.cpp
         tests/TestPanel.h
         tests/TestPanel.cpp
-        tests/TestPanelSize.h
-        tests/TestPanelSize.cpp
         tests/TestMainWindow.cpp
         tests/TestMainWindowPanel.cpp
         tests/TestMainWindowUpdate.cpp
@@ -89,6 +87,7 @@ if(BUILD_QT_TESTS)
         src/ui/recognizer/RecognizerWidget.ui
         src/widgets/list/CandidateListDelegate.cpp
         src/widgets/list/CandidateList.cpp
+        src/widgets/list/RecognizerCandidateList.cpp
         src/ui/recognizer/Candidates.cpp
         src/ui/recognizer/Strokes.cpp
         src/ui/recognizer/Drag.cpp
@@ -102,11 +101,8 @@ if(BUILD_QT_TESTS)
     add_test(NAME data_manifest COMMAND test_mainwindow data)
     set_tests_properties(data_manifest PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-    add_test(NAME panel_size_math COMMAND test_mainwindow panelsize)
-    set_tests_properties(panel_size_math PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-    add_test(NAME panel_square_canvas COMMAND test_mainwindow panel)
-    set_tests_properties(panel_square_canvas PROPERTIES
+    add_test(NAME panel_free_resize COMMAND test_mainwindow panel)
+    set_tests_properties(panel_free_resize PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_test(NAME main_window_flows COMMAND test_mainwindow mainwindow)
     set_tests_properties(main_window_flows PROPERTIES

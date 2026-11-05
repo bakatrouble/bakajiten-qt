@@ -11,16 +11,16 @@
 /// re-queries the candidate strip.
 void RecognizerWidget::refreshCanvas() const { ui->canvas->setStrokeData(&strokes, &open); }
 
-void RecognizerWidget::onCanvasStarted(const QPointF &at255) {
+void RecognizerWidget::onCanvasStarted(const QPointF &atPx) {
     open.clear();
-    open.push_back(at255);
+    open.push_back(atPx);
     refreshCanvas();
 }
 
-void RecognizerWidget::onCanvasMoved(const QPointF &at255) {
+void RecognizerWidget::onCanvasMoved(const QPointF &atPx) {
     if (!open.isEmpty()) {
-        if ((open.last() - at255).manhattanLength() > 1.2) {
-            open.push_back(at255);
+        if ((open.last() - atPx).manhattanLength() > 1.2) {
+            open.push_back(atPx);
             refreshCanvas();
         }
     }

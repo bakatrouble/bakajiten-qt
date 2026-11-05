@@ -45,8 +45,8 @@ RecognizerWidget::RecognizerWidget(QWidget *parent) : QWidget(parent) {
     // native window still owns a shell surface, which Wayland
     // promotes to a top-level (observed: the panel escaped the main
     // window). A plain child is painted into the parent on every
-    // backend — it cannot leave, needs no compositor, and the
-    // client-drawn title bar above is its only chrome.
+    // backend — positioning, resize, and mouse events (including
+    // wheel) stay fully client-side with no compositor roundtrips.
     auto [built, form] = buildForm<Ui::RecognizerWidget>(this, "ui/recognizer/RecognizerWidget.ui");
     ui = built;
     devForm = form;
@@ -68,11 +68,12 @@ RecognizerWidget::RecognizerWidget(QWidget *parent) : QWidget(parent) {
     // Elevation: soft shadow around the card. Follows the rounded
     // shape (unpainted corners stay transparent). Re-renders with
     // every child repaint — shrink the radius if stroke drawing ever
-    // feels laggy under software rendering.
+    // feels laggy under software rendering. Kept small: a heavy
+    // blur bleeds an opaque-looking fringe into the corners.
     auto *shadow = new QGraphicsDropShadowEffect(this);
-    shadow->setBlurRadius(24);
-    shadow->setOffset(0, 4);
-    shadow->setColor(MaterialPalette::scrim(0.7F));
+    shadow->setBlurRadius(12);
+    shadow->setOffset(0, 2);
+    shadow->setColor(MaterialPalette::scrim(0.3F));
     setGraphicsEffect(shadow);
 
     // Match thread owns the model from here on: wire requests
@@ -134,7 +135,6 @@ RecognizerWidget::~RecognizerWidget() {
 void RecognizerWidget::reloadUi() {
     // Toggle states live in the dying buttons: read first.
     const bool grid = ui->gridButton->isChecked();
-    const bool kana = ui->kanaButton->isChecked();
     if (!reloadForm(this, devForm, ui, "ui/recognizer/RecognizerWidget.ui")) {
         return; // release no-op, or load failed (logged)
     }
@@ -143,9 +143,7 @@ void RecognizerWidget::reloadUi() {
     // canvas/grid application is visual only, kana needs one pass.
     {
         const QSignalBlocker blockGrid(ui->gridButton);
-        const QSignalBlocker blockKana(ui->kanaButton);
         ui->gridButton->setChecked(grid);
-        ui->kanaButton->setChecked(kana);
     }
     ui->canvas->setGridVisible(grid);
     onRecognize();
@@ -155,15 +153,9 @@ void RecognizerWidget::reloadUi() {
 /// Runs once per form: initial build and every dev reload.
 void RecognizerWidget::wireUi() {
     // Square chrome: sized to the interface font (fixed 40px boxes
-    // would clip scaled text); refit on font changes below.
-    fitToolButtons(ui->toolbar, chromeButton);
-    if constexpr (kDevUiLoader) {
-        // Dev aid: exact screen rects for click automation (see README).
-        qCDebug(uiDevLog) << "kana"
-                          << QRect(ui->kanaButton->mapToGlobal(QPoint(0, 0)),
-                                   ui->kanaButton->size())
-                          << "panel" << QRect(mapToGlobal(QPoint(0, 0)), size());
-    }
+    // would clip scaled text); refit on font changes below. Covers
+    // the toolbar and the query-row buttons alike.
+    fitToolButtons(this, chromeButton);
 
     // Resize grip: plain corner zone with a diagonal cursor; sizing
     // is manual (clamped to the layout minimum and the parent rect)
@@ -186,10 +178,17 @@ void RecognizerWidget::wireUi() {
     connect(ui->canvas, &CanvasWidget::strokeMoved, this, &RecognizerWidget::onCanvasMoved);
     connect(ui->canvas, &CanvasWidget::strokeEnded, this, &RecognizerWidget::onCanvasEnded);
     connect(ui->canvas, &CanvasWidget::clearDrawing, this, &RecognizerWidget::onClear);
+    connect(ui->canvas, &CanvasWidget::undoRequested, this, &RecognizerWidget::onUndo,
+            Qt::UniqueConnection);
+    connect(ui->canvas, &CanvasWidget::redoRequested, this, &RecognizerWidget::onRedo,
+            Qt::UniqueConnection);
 
     connect(ui->closeButton, &QPushButton::clicked, this, [this] { close(); });
+    connect(ui->queryLeftButton, &QPushButton::clicked, this, &RecognizerWidget::queryCursorLeft);
+    connect(ui->queryRightButton, &QPushButton::clicked, this, &RecognizerWidget::queryCursorRight);
+    connect(ui->queryBackspaceButton, &QPushButton::clicked, this,
+            &RecognizerWidget::queryBackspace);
     connect(ui->gridButton, &QPushButton::toggled, this, &RecognizerWidget::onGridToggled);
-    connect(ui->kanaButton, &QPushButton::toggled, this, &RecognizerWidget::onKanaToggled);
     connect(ui->undoButton, &QPushButton::clicked, this, &RecognizerWidget::onUndo);
     connect(ui->redoButton, &QPushButton::clicked, this, &RecognizerWidget::onRedo);
     connect(ui->clearButton, &QPushButton::clicked, this, &RecognizerWidget::onClear);
@@ -198,16 +197,15 @@ void RecognizerWidget::wireUi() {
     ButtonIcon::apply(ui->closeButton, QStringLiteral("close"));
     ui->gridButton->setToolTip(tr("Toggle grid"));
     ButtonIcon::apply(ui->gridButton, QStringLiteral("grid"));
-    ui->kanaButton->setToolTip(tr("Kana matching"));
-    ButtonIcon::apply(ui->kanaButton, QStringLiteral("kana-match"));
     ui->undoButton->setToolTip(tr("Undo stroke"));
     ButtonIcon::apply(ui->undoButton, QStringLiteral("undo"));
     ui->redoButton->setToolTip(tr("Redo stroke"));
     ButtonIcon::apply(ui->redoButton, QStringLiteral("redo"));
     ui->clearButton->setToolTip(tr("Clear canvas"));
     ButtonIcon::apply(ui->clearButton, QStringLiteral("erase"));
+    // Query-row navigation buttons (DejaVu Sans outlines — Noto
+    // Sans has no ◀ ▶ ⌫; tooltips already set in the form).
+    ButtonIcon::apply(ui->queryLeftButton, QStringLiteral("nav-left"));
+    ButtonIcon::apply(ui->queryRightButton, QStringLiteral("nav-right"));
+    ButtonIcon::apply(ui->queryBackspaceButton, QStringLiteral("backspace"));
 }
-
-/// Snap a requested panel size so the canvas comes out square (see
-/// `PanelSize.h`): the layout minimum floors it, the live chrome
-/// inset picks the square-canvas line, the parent bounds cap it.

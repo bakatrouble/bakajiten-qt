@@ -5,31 +5,28 @@
 #include "core/palette/MaterialPalette.h"
 #include "core/settings/MemorizedState.h"
 #include "widgets/icons/ButtonIcon.h"
-#include "widgets/list/CandidateList.h"
+#include "widgets/list/RecognizerCandidateList.h"
 #include "widgets/toolbutton/ToolButtonFit.h"
 
 #include "core/settings/MemorizedState.h"
-#include "util/PanelSize.h"
 
 #include <QCloseEvent>
 #include <QEvent>
 #include <QPainter>
 #include <QResizeEvent>
-#include <QShowEvent>
 #include <QTimer>
 
 void RecognizerWidget::applyPanelSize(int reqW, int reqH) {
+    // Free resize: clamp the request to the layout minimum and the
+    // parent bounds, no shape forcing.
     const QSize need = layout()->minimumSize();
-    const int inset = canvasInset(size(), ui->canvas->size());
     QSize max(std::numeric_limits<int>::max(), std::numeric_limits<int>::max());
     if (const QWidget *par = parentWidget()) {
         max.setWidth(par->width() - pos().x());
         max.setHeight(par->height() - pos().y());
     }
-    resize(snapPanelSize(QSize(reqW, reqH), need, max, inset));
-    // The snap can move the strip viewport: refit the cells now that
-    // the layout is live.
-    ui->candidatesList->refreshGrid();
+    resize(
+        QSize(qBound(need.width(), reqW, max.width()), qBound(need.height(), reqH, max.height())));
 }
 
 void RecognizerWidget::paintEvent(QPaintEvent *) {
@@ -64,22 +61,6 @@ void RecognizerWidget::closeEvent(QCloseEvent *event) {
 void RecognizerWidget::resizeEvent(QResizeEvent *event) {
     QWidget::resizeEvent(event);
     MemorizedState::setPanelSize(size());
-    // Self-correcting: layout and parent changes can leave the
-    // canvas off-square with no further resize coming. The snap is
-    // idempotent on-line, so this terminates after one correction.
-    const int inset = canvasInset(size(), ui->canvas->size());
-    if (width() - height() != inset) {
-        applyPanelSize(width(), height());
-    }
-}
-
-void RecognizerWidget::showEvent(QShowEvent *event) {
-    QWidget::showEvent(event);
-    // Snap once the show's layout pass is through (queued): the
-    // ctor can't, neither the parent nor the hidden panel is laid
-    // out yet, so the chrome inset would be garbage. The snap
-    // refits the cells to the live viewport.
-    QTimer::singleShot(0, this, [this] { applyPanelSize(width(), height()); });
 }
 
 void RecognizerWidget::changeEvent(QEvent *event) {
@@ -88,7 +69,7 @@ void RecognizerWidget::changeEvent(QEvent *event) {
         ButtonIcon::refresh(this);
     }
     if (event->type() == QEvent::FontChange) {
-        fitToolButtons(ui->toolbar, chromeButton);
+        fitToolButtons(this, chromeButton);
         ui->candidatesList->refreshScale();
         // Rows just moved: refit the cells once the layout settles.
         QTimer::singleShot(0, this, [this] { ui->candidatesList->refreshGrid(); });
@@ -96,9 +77,3 @@ void RecognizerWidget::changeEvent(QEvent *event) {
 }
 
 void RecognizerWidget::onGridToggled(bool on) { ui->canvas->setGridVisible(on); }
-
-void RecognizerWidget::onKanaToggled(bool /*on*/) {
-    // Kana mode is read live from the button in onRecognize; nothing
-    // to push anywhere (no stroke mirror anymore).
-    onRecognize();
-}

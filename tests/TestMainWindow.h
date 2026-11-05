@@ -20,7 +20,10 @@ private slots:
     void openButtonShowsPanel();
     void openButtonTogglesPanelClosed();
     void panelOpensUnderButton();
+    void queryButtonsEditQuery();
+    void queryButtonsSquareAndToolbarSpans();
     void clickAwayHidesPanel();
+    void startupFocusesSearchInput();
     void panelOpenFocusesInput();
     void searchFieldClickKeepsPanel();
     void helpMenuShowsAbout();

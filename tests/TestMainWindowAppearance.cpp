@@ -23,11 +23,11 @@ void TestMainWindow::toolbarFollowsFont() {
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");
     QTest::mouseClick(openButtonOf(window.get()), Qt::LeftButton);
-    auto *kana = window->findChild<QPushButton *>("kanaButton");
-    QVERIFY2(kana != nullptr, "kana button missing");
+    auto *grid = window->findChild<QPushButton *>("gridButton");
+    QVERIFY2(grid != nullptr, "grid button missing");
     // Fixed 40px chrome: the buttons never outgrow the row, but
     // their content font still follows the interface scale.
-    const double beforePoint = kana->font().pointSizeF();
+    const double beforePoint = grid->font().pointSizeF();
     AppSettings baseline;
     baseline.setScale(1.0);
     baseline.apply();
@@ -37,8 +37,8 @@ void TestMainWindow::toolbarFollowsFont() {
     // Font propagation and relayout are queued: settle before
     // measuring (the app's event loop does this continuously).
     QTest::qWait(100);
-    QVERIFY2(kana->height() <= 40, "toolbar chrome must stay capped");
-    QVERIFY2(kana->font().pointSizeF() > beforePoint, "toolbar font did not follow the scale");
+    QVERIFY2(grid->height() <= 40, "toolbar chrome must stay capped");
+    QVERIFY2(grid->font().pointSizeF() > beforePoint, "toolbar font did not follow the scale");
     // Square chrome: every toolbar button keeps equal sides.
     auto *toolbar = panelOf(window.get())->findChild<QWidget *>("toolbar");
     QVERIFY2(toolbar != nullptr, "toolbar missing");

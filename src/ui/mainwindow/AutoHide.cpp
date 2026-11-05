@@ -72,6 +72,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 
 void MainWindow::showEvent(QShowEvent *event) {
     QMainWindow::showEvent(event);
+    if (shownOnce) {
+        return;
+    }
+    shownOnce = true;
+    ui->centralwidget->focusSearchInput();
     // A per-widget style set before first show does not take
     // effect on the menu bar (it keeps painting with the app
     // style); sync once the window exists.

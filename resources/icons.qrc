@@ -1,13 +1,15 @@
 <RCC>
   <qresource prefix="/icons">
     <file alias="app.svg">../packaging/desktop/bakajiten.svg</file>
+    <file alias="backspace.svg">icons/backspace.svg</file>
     <file alias="close.svg">icons/close.svg</file>
     <file alias="dictionary.svg">icons/dictionary.svg</file>
     <file alias="erase.svg">icons/erase.svg</file>
     <file alias="grid.svg">icons/grid.svg</file>
-    <file alias="kana-match.svg">icons/kana-match.svg</file>
     <file alias="kana.svg">icons/kana.svg</file>
     <file alias="latin.svg">icons/latin.svg</file>
+    <file alias="nav-left.svg">icons/nav-left.svg</file>
+    <file alias="nav-right.svg">icons/nav-right.svg</file>
     <file alias="pen.svg">icons/pen.svg</file>
     <file alias="prefix.svg">icons/prefix.svg</file>
     <file alias="redo.svg">icons/redo.svg</file>

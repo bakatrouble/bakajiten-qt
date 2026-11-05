@@ -55,7 +55,6 @@ void TestMainWindow::cleanupTestCase() {
 #include "TestGzip.h"
 #include "TestMainWindow.h"
 #include "TestPanel.h"
-#include "TestPanelSize.h"
 
 #include <QApplication>
 
@@ -118,10 +117,6 @@ int main(int argc, char **argv) {
         run(data);
         TestGzip gzip;
         run(gzip);
-    }
-    if (only.isEmpty() || only == QStringLiteral("panelsize")) {
-        TestPanelSize size;
-        run(size);
     }
     if (only.isEmpty() || only == QStringLiteral("panel")) {
         TestRecognizerPanel panel;

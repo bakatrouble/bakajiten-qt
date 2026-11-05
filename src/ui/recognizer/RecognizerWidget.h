@@ -5,6 +5,7 @@
 #include <QElapsedTimer>
 #include <QPointF>
 #include <QThread>
+#include <QTimer>
 #include <QVector>
 #include <QWidget>
 
@@ -14,12 +15,11 @@ namespace Ui {
 class RecognizerWidget;
 }
 class KanjiInfo;
-class QShowEvent;
 class QListWidgetItem;
 
-/// Handwriting recognition panel: canvas + right toolbar on top,
-/// scrollable candidate strip at the bottom. Layout comes from
-/// `RecognizerWidget.ui` — compiled uic in release, QUiLoader in dev
+/// Handwriting recognition panel: left column (query row, canvas,
+/// candidate strip, status) with a full-height right toolbar.
+/// Layout comes from `RecognizerWidget.ui` — compiled uic in release, QUiLoader in dev
 /// builds (same `Ui::` struct either way, see `dev/UiForm.h`).
 /// Strokes live here (for painting and matching alike) and are
 /// passed per query to the match worker (model handle on a QThread);
@@ -45,6 +45,12 @@ signals:
     /// Candidate picked (click, not drag): MainWindow inserts it
     /// into the search field.
     void candidateAccepted(const QString &text);
+    /// Query cursor step left (search field keeps focus).
+    void queryCursorLeft();
+    /// Query cursor step right (search field keeps focus).
+    void queryCursorRight();
+    /// Delete the character before the query cursor.
+    void queryBackspace();
     /// Same candidate double-clicked fast: no second insert — the
     /// opener shows the kanji dialog instead.
     void candidateDoubleClicked(const QString &text);
@@ -56,8 +62,7 @@ signals:
     void requestLoadModel();
     /// Score request (worker thread): strokes by value, echoed
     /// generation id for staleness checks.
-    void requestRecognize(QVector<QVector<QPointF>> strokes, quint32 topK, bool includeKana,
-                          quint64 generation);
+    void requestRecognize(QVector<QVector<QPointF>> strokes, quint32 topK, quint64 generation);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -65,16 +70,13 @@ protected:
     /// Persist the size (position is re-anchored to the open button
     /// on every show, so only the size is stored).
     void resizeEvent(QResizeEvent *event) override;
-    /// Snap once geometry is live (the ctor can't: neither the
-    /// parent nor the hidden panel is laid out yet).
-    void showEvent(QShowEvent *event) override;
     /// Interface font changed (UI scale): re-derive the candidate
     /// strip to match, like the initial build does.
     void changeEvent(QEvent *event) override;
 
 private slots:
-    void onCanvasStarted(const QPointF &at255);
-    void onCanvasMoved(const QPointF &at255);
+    void onCanvasStarted(const QPointF &atPx);
+    void onCanvasMoved(const QPointF &atPx);
     void onCanvasEnded();
     void onRecognize();
     /// Worker reply: apply unless superseded (id mismatch).
@@ -87,7 +89,6 @@ private slots:
     void onRedo();
     void onClear();
     void onGridToggled(bool on);
-    void onKanaToggled(bool on);
 
 private:
     /// Install event filters, feed the canvas, and connect everything.
@@ -97,8 +98,9 @@ private:
     void updateStatus();
     /// Clicked (not dragged) candidate: forward its text.
     void onCandidateClicked(QListWidgetItem *item);
-    /// Snap a requested size to the square-canvas line (see
-    /// `PanelSize.h`), honoring layout minimum then parent bounds.
+    /// Clamp a requested size to the layout minimum and the parent
+    /// bounds (no shape forcing: the canvas takes whatever slack
+    /// is left).
     void applyPanelSize(int reqW, int reqH);
     /// Square chrome buttons: the 40px design at 100% scale (the
     /// shared fit grows the side with the interface font, keeping
@@ -123,8 +125,13 @@ private:
     bool modelReady = false;
     /// Kanji hover info (optional `kanji.bin`; outlives the form).
     KanjiInfo *kanjiInfo = nullptr;
-    /// Last match time in ms (-1 = never matched).
+    /// Last end-to-end latency in ms, stroke end to strip update
+    /// (-1 = never matched). This is the felt wait: queueing plus
+    /// decode, with no intentional delay in between.
     double matchMs = -1.0;
+    /// Started on every query (stroke end, undo/redo); read when
+    /// that generation's reply lands.
+    QElapsedTimer queryClock;
 
     /// Resize state while dragging the corner grip.
     bool resizing = false;

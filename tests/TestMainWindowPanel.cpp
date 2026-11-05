@@ -69,6 +69,29 @@ void TestMainWindow::panelOpensUnderButton() {
     QCOMPARE(panel->pos(), QPoint(x, y));
 }
 
+void TestMainWindow::queryButtonsEditQuery() {
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    QTest::mouseClick(openButtonOf(window.get()), Qt::LeftButton);
+    auto *panel = panelOf(window.get());
+    QVERIFY(panel->isVisible());
+    auto *field = window->centralWidget()->findChild<QLineEdit *>("searchInput");
+    QVERIFY2(field != nullptr, "search field missing");
+    auto *left = panel->findChild<QPushButton *>("queryLeftButton");
+    auto *right = panel->findChild<QPushButton *>("queryRightButton");
+    auto *backspace = panel->findChild<QPushButton *>("queryBackspaceButton");
+    QVERIFY2(left != nullptr && right != nullptr && backspace != nullptr, "query buttons missing");
+    field->setText(QStringLiteral("あき"));
+    field->setCursorPosition(2);
+    QTest::mouseClick(left, Qt::LeftButton);
+    QCOMPARE(field->cursorPosition(), 1);
+    QTest::mouseClick(right, Qt::LeftButton);
+    QCOMPARE(field->cursorPosition(), 2);
+    QTest::mouseClick(backspace, Qt::LeftButton);
+    QCOMPARE(field->text(), QStringLiteral("あ"));
+    QCOMPARE(field->cursorPosition(), 1);
+}
+
 void TestMainWindow::clickAwayHidesPanel() {
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");
@@ -81,6 +104,17 @@ void TestMainWindow::clickAwayHidesPanel() {
     QTest::mouseClick(table, Qt::LeftButton, Qt::NoModifier,
                       QPoint(table->width() / 2, table->height() / 2));
     QVERIFY(!panelOf(window.get())->isVisible());
+}
+
+void TestMainWindow::startupFocusesSearchInput() {
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    // Typing searches immediately on launch: the query field takes
+    // focus (the first tab-stop, the suffix button, must not keep
+    // it).
+    auto *input = window->findChild<QLineEdit *>("searchInput");
+    QVERIFY2(input != nullptr, "search input missing");
+    QVERIFY(input->hasFocus());
 }
 
 void TestMainWindow::panelOpenFocusesInput() {
@@ -211,8 +245,16 @@ void TestMainWindow::queryTimeShownAfterStroke() {
     QTest::mouseMove(canvas, from + QPoint(60, 0));
     QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, from + QPoint(60, 0));
     // Scoring runs on the match thread: cells (and the ms readout)
-    // land a queued delivery later.
+    // land a queued delivery later. The readout is end-to-end —
+    // stroke end to strip update — with no intentional wait, so
+    // it stays near a bare decode (tens of ms).
     QTRY_VERIFY(status->text().contains("ms"));
+    const double shown = status->text()
+                             .split(QStringLiteral("\u00b7"))
+                             .last()
+                             .remove(QStringLiteral("ms"))
+                             .toDouble();
+    QVERIFY2(shown < 300.0, qPrintable(status->text()));
 }
 
 void TestMainWindow::toolbarSquareIcons() {
@@ -236,17 +278,54 @@ void TestMainWindow::toolbarSquareIcons() {
     check("meaningButton", "latin");
     check("closeButton", "close");
     check("gridButton", "grid");
-    check("kanaButton", "kana-match");
     check("undoButton", "undo");
     check("redoButton", "redo");
     check("clearButton", "erase");
+    check("queryLeftButton", "nav-left");
+    check("queryRightButton", "nav-right");
+    check("queryBackspaceButton", "backspace");
     // Every referenced file ships square in the resource bundle.
     for (const QString &name :
          {QStringLiteral("suffix"), QStringLiteral("prefix"), QStringLiteral("pen"),
-          QStringLiteral("kana"), QStringLiteral("kana-match"), QStringLiteral("latin"),
-          QStringLiteral("close"), QStringLiteral("grid"), QStringLiteral("undo"),
-          QStringLiteral("redo"), QStringLiteral("erase")}) {
+          QStringLiteral("kana"), QStringLiteral("latin"), QStringLiteral("close"),
+          QStringLiteral("grid"), QStringLiteral("undo"), QStringLiteral("redo"),
+          QStringLiteral("erase"), QStringLiteral("nav-left"), QStringLiteral("nav-right"),
+          QStringLiteral("backspace")}) {
         QVERIFY2(QFile::exists(QStringLiteral(":/icons/") + name + QStringLiteral(".svg")),
                  qPrintable(name));
     }
+}
+
+void TestMainWindow::queryButtonsSquareAndToolbarSpans() {
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    QTest::mouseClick(openButtonOf(window.get()), Qt::LeftButton);
+    auto *panel = panelOf(window.get());
+    QVERIFY(panel->isVisible());
+    // Navigation buttons share the toolbar chrome: square and flat.
+    const char *names[] = {"queryLeftButton", "queryRightButton", "queryBackspaceButton"};
+    for (const char *name : names) {
+        auto *button = panel->findChild<QPushButton *>(QString::fromLatin1(name));
+        QVERIFY2(button != nullptr, name);
+        QVERIFY2(button->isFlat(), name);
+        QCOMPARE(button->width(), button->height());
+    }
+    // The right toolbar spans the navigation row too: its top sits
+    // at or above the query row's top edge.
+    auto *toolbar = panel->findChild<QWidget *>("toolbar");
+    QVERIFY2(toolbar != nullptr, "toolbar missing");
+    auto *left = panel->findChild<QPushButton *>("queryLeftButton");
+    QVERIFY2(left != nullptr, "queryLeftButton missing");
+    const int queryTop = left->mapTo(panel, QPoint(0, 0)).y();
+    const int toolbarTop = toolbar->mapTo(panel, QPoint(0, 0)).y();
+    QVERIFY2(toolbarTop <= queryTop, "toolbar does not span the navigation row");
+    // Status bar spans the full panel width; the resize grip sits
+    // flush at the very bottom-right corner (no layout padding).
+    auto *status = panel->findChild<QLabel *>("statusLabel");
+    auto *grip = panel->findChild<QLabel *>("resizeGrip");
+    QVERIFY2(status != nullptr && grip != nullptr, "status row missing");
+    QCOMPARE(status->mapTo(panel, QPoint(status->width(), 0)).x(), panel->width() - grip->width());
+    const QPoint gripCorner = grip->mapTo(panel, grip->rect().bottomRight());
+    QCOMPARE(gripCorner.x(), panel->width() - 1);
+    QCOMPARE(gripCorner.y(), panel->height() - 1);
 }

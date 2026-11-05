@@ -314,27 +314,35 @@ opens under the search button; size persists, position always
 re-anchors; hides on click-away, focus loss, or its close
 button.
 
-- `CanvasWidget`: capture in pen space (`strokeStarted/Moved/
-  Ended`, >1.2px moves, right-click clears); paints paper,
-  1px grid, finished ink + active stroke (amber), help text.
+- `CanvasWidget`: capture in canvas pixels (`strokeStarted/Moved/
+  Ended`, >1.2px moves, right-click clears, wheel steps
+  undo/redo — resize never rescales ink); paints paper, uniform
+  auto-fit grid (40px min cells, counts grow as cells fit, block
+  centered), finished ink + active stroke (amber), help text.
 - `Strokes.cpp`: open-stroke capture, undo/redo as vector
   moves, clear.
-- `Candidates.cpp`: `onRecognize` (topK 20, kana toggle live)
-  → worker; `onRecognized` drops stale generations →
-  `CandidateList::setHits`; status line (templates, strokes,
-  ms); click accepts (inserts at cursor + searches),
-  second click within the double-click interval opens kanji
-  info.
-- `CandidateList` (`QListWidget`, horizontal, uniform cells):
-  kana hits get vivid container tint (katakana blue / hiragana
-  green, inverted when active), scores on hover, scrollable
-  edge fades (`EdgeFade`, click-through gradients), smooth
-  180 ms wheel scrolling, vertical wheel never scrolls.
-- `Drag.cpp` + `PanelSize.h`: corner grip resizes with
-  square-canvas snap math (pure, unit-tested); toolbar gaps
-  are the drag handle.
+- `Candidates.cpp`: `onRecognize` scores immediately →
+  worker; nothing shows before the full ranking lands;
+  `onRecognized` drops stale generations →
+  `RecognizerCandidateList::setHits`;
+  status line (strokes, ms); click accepts (inserts at
+  cursor + searches), second click within the double-click
+  interval opens kanji info.
+- `RecognizerCandidateList` (exclusive strip: double-size type,
+  single-line rows, content-width cells, plain paint, hover
+  inverts) over the shared `CandidateList` (square cells, kanji
+  dialog strips);
+  scores on hover, scrollable edge fades (`EdgeFade`,
+  click-through gradients), smooth 180 ms wheel scrolling,
+  vertical wheel never scrolls.
+- Query row on top (◀ ▶ ⌫): cursor steps and backspace act on
+  the search field through `DictionaryWidget` (field keeps focus,
+  backspace re-searches).
+- `Drag.cpp`: corner grip resizes freely (clamped to layout
+  minimum and parent, no shape forcing); toolbar gaps are the
+  drag handle.
 - Chrome (`paintEvent`): card fill + 1px border + 8px radius,
-  triangular grip glyph; drop shadow; close/grid/kana/
+  triangular grip glyph; drop shadow; close/grid/
   undo/redo/clear buttons (40px, `ButtonIcon` SVG re-tint on
   theme change).
 
@@ -412,8 +420,8 @@ per-kind update asset.
 
 ## 17. Tests (`ctest`, offscreen, `BAKAJITEN_DATA_DIR` → repo `data/`)
 
-- `data_manifest` (manifest parse/status), `panel_size_math`
-  (snap arithmetic), `panel_square_canvas` (real grip drag).
+- `data_manifest` (manifest parse/status), `panel_free_resize`
+  (real grip drag, unforced).
 - `main_window_flows`: open/click-away/fades, real strokes,
   table paint/selection/tooltips, article spans/hover/inks,
   settings/persist/scale/romaji/kana/candidates/kanji/update
@@ -447,8 +455,8 @@ next F5. Release builds never touch UiTools.
    painting, memorized geometry.
 4. Article as widgets (ruby + run labels), not HTML; selection
    and hover resolved in viewport coordinates.
-5. Panel as a plain child widget with snap math; candidates as
-   a horizontal list with script-tinted cells.
+5. Panel as a plain child widget (free resize, clamped to the
+   parent); candidates as a horizontal list with plain cells.
 6. One shared hover card + delay; modeless kanji dialog with
    its own models and workers.
 7. Updater: kind-gated check → prompt → verified download →

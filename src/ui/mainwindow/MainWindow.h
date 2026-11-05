@@ -35,6 +35,9 @@ public:
 protected:
     /// Click-away hides the panel, with the same exemptions as focus.
     bool eventFilter(QObject *watched, QEvent *event) override;
+    /// First show focuses the query field (typing searches
+    /// immediately — the first tab-stop would take it otherwise).
+    void showEvent(QShowEvent *event) override;
     /// Interface font changed: the menu bar's hint updates but its
     /// laid-out height does not — relayout keeps scaled text inside.
     void changeEvent(QEvent *event) override;
@@ -95,6 +98,9 @@ private:
 
     Ui::MainWindow *ui;
     RecognizerWidget *recognizer;
+    /// First show already focused the query field (restores and
+    /// re-shows leave focus alone).
+    bool shownOnce = false;
     /// Window-level kanji hover (shared card for the results
     /// table, the article, and the recognizer strip).
     KanjiHover *kanjiHover = nullptr;

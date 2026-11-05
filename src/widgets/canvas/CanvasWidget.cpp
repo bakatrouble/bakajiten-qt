@@ -8,18 +8,14 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QWheelEvent>
 
-namespace {
-/// pen-space edge: the recognizer's native coordinate space.
-constexpr double kBox = 255.0;
-} // namespace
+#include <algorithm>
 
 CanvasWidget::CanvasWidget(QWidget *parent) : QWidget(parent) {
     updateMinimum();
-    // Plain expanding both ways: squareness comes from the panel
-    // (applyPanelSize keeps w-h on the square-canvas line), not from
-    // height-for-width — an expanding height stretches past it to
-    // fill the row, and a fixed one collapses to the minimum.
+    // Plain expanding both ways: the panel clamps, never forces a
+    // shape — an expanding height stretches to fill the row.
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMouseTracking(false);
 }
@@ -50,7 +46,18 @@ void CanvasWidget::setGridVisible(bool visible) {
     update();
 }
 
-QPointF CanvasWidget::to255(const QPointF &atPx) const {
+CanvasWidget::Grid CanvasWidget::gridFor(QSize size) {
+    // As many min-size cells as fit (at least one each way), grown
+    // uniformly to fill, block centered.
+    const int cols = std::max(1, size.width() / minCellPx);
+    const int rows = std::max(1, size.height() / minCellPx);
+    const int cell = std::max(1, std::min(size.width() / cols, size.height() / rows));
+    return {cols, rows, cell, (size.width() - cols * cell) / 2.0,
+            (size.height() - rows * cell) / 2.0};
+}
+
+QPointF CanvasWidget::toPen(const QPointF &atPx) const {
+    constexpr double kBox = 255.0;
     const QRectF r = rect();
     if (r.width() <= 0.0 || r.height() <= 0.0) {
         return QPointF(0.0, 0.0);
@@ -66,37 +73,38 @@ void CanvasWidget::paintEvent(QPaintEvent *) {
     const QRectF r = rect();
     // Drawing-surface roles from the palette (the paper flag
     // picks the variant, like a theme would).
-    const bool darkPaper = SettingsStore::shared().current().resolvedIcons() == IconScheme::Light;
+    const bool darkPaper = SettingsStore::shared().current().darkPaper();
     const QColor paper = MaterialPalette::canvasPaper(darkPaper);
     const QColor gridColor = MaterialPalette::canvasGrid(darkPaper);
     const QColor helpColor = MaterialPalette::canvasHelp();
     const QColor inkColor = MaterialPalette::canvasInk(darkPaper);
     p.fillRect(r, paper);
     if (gridVisible) {
+        // Uniform lattice (border included), refit every paint.
+        const Grid grid = gridFor(r.size().toSize());
         p.setPen(QPen(gridColor, 1.0));
-        for (double f : {0.1, 0.5, 0.9}) {
-            const double x = r.left() + r.width() * f;
-            const double y = r.top() + r.height() * f;
-            p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom()));
-            p.drawLine(QPointF(r.left(), y), QPointF(r.right(), y));
+        for (int i = 0; i <= grid.cols; ++i) {
+            const double x = grid.ox + i * grid.cell;
+            p.drawLine(QPointF(x, grid.oy), QPointF(x, grid.oy + grid.rows * grid.cell));
+        }
+        for (int j = 0; j <= grid.rows; ++j) {
+            const double y = grid.oy + j * grid.cell;
+            p.drawLine(QPointF(grid.ox, y), QPointF(grid.ox + grid.cols * grid.cell, y));
         }
     }
 
-    const auto toPx = [&](const QPointF &q) {
-        return QPointF(r.left() + q.x() / kBox * r.width(), r.top() + q.y() / kBox * r.height());
-    };
     const auto poly = [&](const QVector<QPointF> &s, const QPen &pen) {
         if (s.size() < 2) {
             if (!s.isEmpty()) {
                 p.setPen(Qt::NoPen);
                 p.setBrush(pen.color());
-                p.drawEllipse(toPx(s.first()), 2.5, 2.5);
+                p.drawEllipse(s.first(), 2.5, 2.5);
             }
             return;
         }
-        QPainterPath path(toPx(s.first()));
+        QPainterPath path(s.first());
         for (int i = 1; i < s.size(); ++i) {
-            path.lineTo(toPx(s.at(i)));
+            path.lineTo(s.at(i));
         }
         p.setPen(pen);
         p.drawPath(path);
@@ -124,7 +132,7 @@ void CanvasWidget::paintEvent(QPaintEvent *) {
 
 void CanvasWidget::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
-        emit strokeStarted(to255(event->position()));
+        emit strokeStarted(event->position());
     } else if (event->button() == Qt::RightButton) {
         emit clearDrawing();
     }
@@ -132,7 +140,7 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event) {
 
 void CanvasWidget::mouseMoveEvent(QMouseEvent *event) {
     if (event->buttons() & Qt::LeftButton) {
-        emit strokeMoved(to255(event->position()));
+        emit strokeMoved(event->position());
     }
 }
 
@@ -140,4 +148,25 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
         emit strokeEnded();
     }
+}
+
+void CanvasWidget::wheelEvent(QWheelEvent *event) {
+    // Wheel steps through history (up = undo, down = redo), one
+    // notch per step; high-res deltas accumulate toward it.
+    const QPoint pixel = event->pixelDelta();
+    const QPoint angle = event->angleDelta();
+    const int delta = pixel.y() != 0   ? pixel.y()
+                      : angle.y() != 0 ? angle.y()
+                      : pixel.x() != 0 ? pixel.x()
+                                       : angle.x();
+    wheelAccum += delta;
+    while (wheelAccum >= 120) {
+        wheelAccum -= 120;
+        emit undoRequested();
+    }
+    while (wheelAccum <= -120) {
+        wheelAccum += 120;
+        emit redoRequested();
+    }
+    event->accept();
 }

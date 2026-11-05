@@ -174,8 +174,8 @@ void TestMainWindow::candidatesFollowScale() {
     QTest::mouseClick(openButtonOf(window.get()), Qt::LeftButton);
     auto *list = panelOf(window.get())->findChild<QListWidget *>("candidatesList");
     QVERIFY2(list != nullptr, "candidates list missing");
-    // Twice the interface font, rows fitted to it — never fixed.
-    QVERIFY(qFuzzyCompare(list->font().pointSizeF(), QApplication::font().pointSizeF() * 2.0));
+    // 1.5x the interface font, rows fitted to it — never fixed.
+    QVERIFY(qFuzzyCompare(list->font().pointSizeF(), QApplication::font().pointSizeF() * 1.5));
     const int shortRow = list->minimumHeight();
     QVERIFY(shortRow > 0);
     // Live interface-font changes re-derive (same path as builds).
