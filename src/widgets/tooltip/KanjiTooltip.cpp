@@ -37,6 +37,11 @@ void KanjiTooltip::hover(const QString &ch, const KanjiInfo::Display &card) {
 }
 
 void KanjiTooltip::refresh() {
+    // Card background follows the live application palette:
+    // stylesheets resolve palette() roles at polish time, and a
+    // style-imposed explicit palette (Breeze pins its own dark one)
+    // would otherwise keep a stale tooltip-base across themes.
+    card()->setPalette(QApplication::palette());
     const MaterialPalette theme = MaterialPalette::fromPalette(QApplication::palette());
     QFont glyphFont = font();
     glyphFont.setPointSizeF(qMax(12.0, glyphFont.pointSizeF() * 3.0));

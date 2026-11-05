@@ -97,14 +97,18 @@ Debug builds, OFF otherwise.
 - `AppSettings` — plain value type, single home for persisted UI
   state. Keys (under `ui/`, flat-file fallback on read):
   `scale` (double, clamped 0.5–3.0), `style` (empty = OS
-  default), `icons` (`IconScheme` Auto/Light/Dark),
+  default), `mode` (`ThemeMode` System/Dark/Light, default
+  System; Dark/Light force the app palette outright and switch a
+  Kvantum style to a palette-driven one (Breeze, else Fusion)),
   `reading` (`ReadingDisplay` Kana/Hepburn/Kunrei),
   `checkUpdates` (bool, default true). File:
   `<AppConfigLocation>/settings.yaml` (or
   `BAKAJITEN_SETTINGS`); `shared()` is the live instance
   (points into the SettingsStore value, see below);
-  `operator==` drives dirty checks; `apply()` re-sets style +
-  font from the live desktop base (never compounded).
+  `apply()` re-sets style + font from the live desktop base
+  (never compounded). The dialog applies every control on
+  change (no Apply/dirty tracking); only the interface scale
+  stages until OK, recreating the window.
 - `YamlFormat` — registers a `yaml` `QSettings` format
   (slash-nested maps, `QStringList`, `@Size(W H)` sizes).
 - `MemorizedState` — typed accessors over sibling `state.yaml`

@@ -11,15 +11,16 @@
 
 #include <cstdint>
 
-/// Which icon set to draw (the canvas is the only consumer: it
-/// flips its drawing surface while the accent stroke stays
-/// constant). `Auto` derives from the theme (dark window color
-/// means light icons and vice versa).
-enum class IconScheme : std::uint8_t { Auto = 0, Light = 1, Dark = 2 };
-
 /// Reading display script: kana as packed, or romaji in two schools
 /// (see `util/Romaji.h` for the exact mapping).
 enum class ReadingDisplay : std::uint8_t { Kana = 0, Hepburn = 1, Kunrei = 2 };
+
+/// Interface color scheme: follow the system, or force dark/light.
+/// Forced modes set the application palette outright (theme styles
+/// that bring their own colors, like Kvantum themes, may still win
+/// for their own surfaces); canvas paper and inks derive from the
+/// live palette either way.
+enum class ThemeMode : std::uint8_t { System = 0, Dark = 1, Light = 2 };
 
 /// Persisted appearance + interface scale: the single home for
 /// settings storage and loading. Storage is a YAML file
@@ -33,8 +34,8 @@ enum class ReadingDisplay : std::uint8_t { Kana = 0, Hepburn = 1, Kunrei = 2 };
 ///
 /// Application (font re-set, style creation) happens in `apply()`,
 /// from the desktop base read per apply — never compounded, never
-/// stale. Scale changes take effect on settings accept (the window
-/// is recreated); theme + icons apply live.
+/// stale. Every control in the settings dialog applies on change
+/// (no Apply); scale changes still recreate the window.
 ///
 /// (Panel geometry still lives in `QSettings`: window state, not
 /// settings-window content.)
@@ -53,11 +54,11 @@ public:
     QString style() const { return m_style; }
     void setStyle(const QString &style) { m_style = style; }
 
-    IconScheme icons() const { return m_icons; }
-    void setIcons(IconScheme icons) { m_icons = icons; }
-
     ReadingDisplay reading() const { return m_reading; }
     void setReading(ReadingDisplay reading) { m_reading = reading; }
+
+    ThemeMode mode() const { return m_mode; }
+    void setMode(ThemeMode mode) { m_mode = mode; }
 
     /// Automatic update checks (startup + hourly). Off opts out.
     bool checkUpdates() const { return m_checkUpdates; }
@@ -79,8 +80,11 @@ public:
     static QFont scaledFont(const QFont &base, double scale);
     /// Apply the style only: live-safe, no recreation needed.
     void applyStyle() const;
-    /// Effective icon scheme (`Auto` resolved via the theme).
-    IconScheme resolvedIcons() const;
+    /// Apply the color scheme (system palette, or the forced
+    /// dark/light one): live-safe, repaints follow.
+    void applyPalette() const;
+    /// Canvas paper follows the theme (dark palette = dark paper).
+    bool darkPaper() const;
 
     /// Live process values.
     static AppSettings &shared();
@@ -94,6 +98,9 @@ public:
     /// Capture the pre-override style (the OS configuration) —
     /// call in main() before the persisted style applies.
     static void noteOsStyle();
+    /// Capture the pre-override application palette — call in
+    /// main() before anything applies (System mode restores it).
+    static void noteOsPalette();
     /// OS-default style name for the Default entry (live style
     /// when uncaptured, e.g. in tests).
     static QString osStyleName();
@@ -101,7 +108,7 @@ public:
 private:
     double m_scale = 1.0;
     QString m_style;
-    IconScheme m_icons = IconScheme::Auto;
     ReadingDisplay m_reading = ReadingDisplay::Kana;
+    ThemeMode m_mode = ThemeMode::System;
     bool m_checkUpdates = true;
 };

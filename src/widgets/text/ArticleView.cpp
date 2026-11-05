@@ -87,7 +87,7 @@ void ArticleView::setArticle(const ArticleDisplay &article) {
             common->setObjectName(QStringLiteral("commonBadge"));
             common->setStyleSheet(QStringLiteral("QLabel { background-color: %1; color: white; "
                                                  "padding: 2px 6px; }")
-                                      .arg(theme.accentGreen().name()));
+                                      .arg(theme.badgeGreen().name()));
             row->addWidget(common);
         }
         if (article.jlpt >= 1 && article.jlpt <= 5) {
@@ -95,7 +95,7 @@ void ArticleView::setArticle(const ArticleDisplay &article) {
             jlpt->setObjectName(QStringLiteral("jlptBadge"));
             jlpt->setStyleSheet(QStringLiteral("QLabel { background-color: %1; color: white; "
                                                "padding: 2px 6px; }")
-                                    .arg(theme.link().name()));
+                                    .arg(theme.badgeBlue().name()));
             row->addWidget(jlpt);
         }
         row->addStretch(1);
@@ -153,11 +153,11 @@ void ArticleView::refreshTheme() {
     if (auto *common = content->findChild<QLabel *>(QStringLiteral("commonBadge"))) {
         common->setStyleSheet(QStringLiteral("QLabel { background-color: %1; color: white; "
                                              "padding: 2px 6px; }")
-                                  .arg(theme.accentGreen().name()));
+                                  .arg(theme.badgeGreen().name()));
     }
     if (auto *jlpt = content->findChild<QLabel *>(QStringLiteral("jlptBadge"))) {
         jlpt->setStyleSheet(QStringLiteral("QLabel { background-color: %1; color: white; "
                                            "padding: 2px 6px; }")
-                                .arg(theme.link().name()));
+                                .arg(theme.badgeBlue().name()));
     }
 }

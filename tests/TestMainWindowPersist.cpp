@@ -186,7 +186,7 @@ void TestMainWindow::settingsNestShape() {
     AppSettings stored;
     stored.setScale(1.5);
     stored.setStyle(QStringLiteral("fusion"));
-    stored.setIcons(IconScheme::Dark);
+    stored.setMode(ThemeMode::Dark);
     stored.save();
     // On-disk shape: slash-keys nest (`ui:` section).
     QFile file(AppSettings::storagePath());
@@ -206,7 +206,7 @@ void TestMainWindow::settingsFlatFallback() {
     const AppSettings loaded = AppSettings::fromStorage();
     QVERIFY(qFuzzyCompare(loaded.scale() + 1.0, 2.25));
     QCOMPARE(loaded.style(), QStringLiteral("windows"));
-    QCOMPARE(loaded.icons(), IconScheme::Light);
+    // The removed icons key is tolerated, never loaded.
     AppSettings::resetStorage();
 }
 void TestMainWindow::fontScaleRescalesMemorizedWidths() {

@@ -11,10 +11,12 @@
 #include <QFileInfo>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenuBar>
 #include <QScrollArea>
 #include <QSignalSpy>
 #include <QSlider>
 #include <QStackedWidget>
+#include <QStyleFactory>
 #include <QTimer>
 
 #include "core/data/DataPaths.h"
@@ -29,83 +31,91 @@
 #include <QPushButton>
 #include <memory>
 
-void TestMainWindow::settingsDialogDirtyTracking() {
+void TestMainWindow::settingsDialogAppliesOnChange() {
     // Normalize all persisted values first (entry state depends on
     // test order).
     AppSettings baseline;
     baseline.setScale(1.0);
     baseline.setStyle(QString());
-    baseline.setIcons(IconScheme::Auto);
     baseline.save();
+    AppSettings::shared().load();
     SettingsDialog dialog(nullptr);
     dialog.show();
     QVERIFY(QTest::qWaitForWindowExposed(&dialog));
-    auto *buttons = dialog.findChild<QDialogButtonBox *>();
-    QVERIFY2(buttons != nullptr, "button box missing");
-    auto *apply = buttons->button(QDialogButtonBox::Apply);
-    QVERIFY2(apply != nullptr, "Apply button missing");
-    auto *warning = dialog.findChild<QLabel *>("scaleWarning");
-    QVERIFY2(warning != nullptr, "scale warning missing");
-    // Clean open: Apply disabled, notice hidden.
-    QVERIFY(!apply->isEnabled());
-    QVERIFY(!warning->isVisibleTo(&dialog));
-    // Scale dirties (and warns: only scale recreates the window).
+    QSignalSpy changed(&dialog, &SettingsDialog::settingsChanged);
+    // No icons combo: canvas paper follows the theme now.
+    QVERIFY(dialog.findChild<QComboBox *>("iconsCombo") == nullptr);
+    // The slider stages without reporting (scale commits on OK):
+    // the restart notice arms, no signal fires.
     auto *slider = dialog.findChild<QSlider *>();
     QVERIFY2(slider != nullptr, "scale slider missing");
+    auto *warning = dialog.findChild<QLabel *>("scaleWarning");
+    QVERIFY2(warning != nullptr, "scale warning missing");
+    QVERIFY(!warning->isVisibleTo(&dialog));
     slider->setValue(150);
-    QVERIFY(apply->isEnabled());
+    QCOMPARE(changed.count(), 0);
     QVERIFY(warning->isVisibleTo(&dialog));
     slider->setValue(100);
-    QVERIFY(!apply->isEnabled());
+    QCOMPARE(changed.count(), 0);
     QVERIFY(!warning->isVisibleTo(&dialog));
     // Slider stops at 25% steps: in-between values snap.
     slider->setValue(137);
     QCOMPARE(slider->value(), 125);
-    QCOMPARE(dialog.selectedScale(), 1.25);
+    QCOMPARE(changed.count(), 0);
     slider->setValue(100);
-    // Icons dirties without warning (applies live); restoring cleans.
-    auto *icons = dialog.findChild<QComboBox *>("iconsCombo");
-    QVERIFY2(icons != nullptr, "icons combo missing");
-    const int dark = icons->findData(static_cast<int>(IconScheme::Dark));
-    QVERIFY2(dark >= 0, "Dark icons missing");
-    const int automatic = icons->findData(static_cast<int>(IconScheme::Auto));
-    icons->setCurrentIndex(dark);
-    QVERIFY(apply->isEnabled());
-    QVERIFY(!warning->isVisibleTo(&dialog));
-    icons->setCurrentIndex(automatic);
-    QVERIFY(!apply->isEnabled());
-    // Theme dirties without warning; restoring cleans.
+    // Theme reports immediately.
     auto *theme = dialog.findChild<QComboBox *>("themeCombo");
     QVERIFY2(theme != nullptr, "theme combo missing");
     QVERIFY2(theme->count() >= 2, "no installed styles to select");
     theme->setCurrentIndex(1);
-    QVERIFY(apply->isEnabled());
-    QVERIFY(!warning->isVisibleTo(&dialog));
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(dialog.currentSettings().style(), theme->currentData().toString());
     theme->setCurrentIndex(0);
-    QVERIFY(!apply->isEnabled());
+    QCOMPARE(changed.count(), 2);
+    // Mode reports immediately.
+    auto *mode = dialog.findChild<QComboBox *>("modeCombo");
+    QVERIFY2(mode != nullptr, "mode combo missing");
+    QCOMPARE(mode->count(), 3);
+    mode->setCurrentIndex(mode->findData(static_cast<int>(ThemeMode::Dark)));
+    QCOMPARE(changed.count(), 3);
+    QCOMPARE(dialog.currentSettings().mode(), ThemeMode::Dark);
+    // Readings report immediately.
+    auto *reading = dialog.findChild<QComboBox *>("readingCombo");
+    QVERIFY2(reading != nullptr, "reading combo missing");
+    reading->setCurrentIndex(reading->findData(static_cast<int>(ReadingDisplay::Hepburn)));
+    QCOMPARE(changed.count(), 4);
+    QCOMPARE(dialog.currentSettings().reading(), ReadingDisplay::Hepburn);
+    // The updates checkbox reports immediately.
+    auto *check = dialog.findChild<QCheckBox *>("checkUpdatesBox");
+    QVERIFY2(check != nullptr, "updates checkbox missing");
+    check->setChecked(!check->isChecked());
+    QCOMPARE(changed.count(), 5);
+    QCOMPARE(dialog.currentSettings().checkUpdates(), check->isChecked());
+    baseline.save();
 }
 
-void TestMainWindow::settingsDialogApplyUnDirties() {
+void TestMainWindow::settingsDialogReadingAppliesLive() {
     // Normalize first (entry state depends on test order).
     AppSettings baseline;
     baseline.setScale(1.0);
     baseline.setStyle(QString());
-    baseline.setIcons(IconScheme::Auto);
+    baseline.setReading(ReadingDisplay::Kana);
+    baseline.setCheckUpdates(true);
     baseline.save();
     AppSettings::shared().load();
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");
     auto *action = window->findChild<QAction *>("actionSettings");
     QVERIFY2(action != nullptr, "settings action missing");
-    // Drive the modal through the real MainWindow Apply path: dirty
-    // it with a live-applied setting (icons need no recreation, so
-    // the dialog stays open), Apply, and read the dirt back. Results
-    // land in locals (asserted after the modal returns, so a failure
-    // can never leave the dialog open to hang the suite).
+    // Drive the modal through the real MainWindow path: flip the
+    // readings combo and read the effect back. Non-scale settings
+    // apply on change, so the dialog stays open and nothing
+    // recreates. Results land in locals (asserted after the modal
+    // returns, so a failure can never leave the dialog open to
+    // hang the suite).
     bool sawDialog = false;
-    bool wasEnabled = false;
     bool persisted = false;
-    bool clean = false;
+    bool staysOpen = false;
     bool restored = false;
     QTimer::singleShot(500, [&] {
         auto *dialog = qobject_cast<SettingsDialog *>(QApplication::activeModalWidget());
@@ -113,36 +123,199 @@ void TestMainWindow::settingsDialogApplyUnDirties() {
             return;
         }
         sawDialog = true;
-        auto *icons = dialog->findChild<QComboBox *>("iconsCombo");
-        auto *buttons = dialog->findChild<QDialogButtonBox *>();
-        auto *apply = buttons != nullptr ? buttons->button(QDialogButtonBox::Apply) : nullptr;
-        const int dark =
-            icons != nullptr ? icons->findData(static_cast<int>(IconScheme::Dark)) : -1;
-        const int automatic =
-            icons != nullptr ? icons->findData(static_cast<int>(IconScheme::Auto)) : -1;
-        if (icons != nullptr && apply != nullptr && dark >= 0 && automatic >= 0) {
-            icons->setCurrentIndex(dark);
-            wasEnabled = apply->isEnabled();
-            QTest::mouseClick(apply, Qt::LeftButton);
-            // Persisted through the MainWindow handler, dialog re-snapped.
-            persisted = AppSettings::fromStorage().icons() == IconScheme::Dark;
-            clean = !dialog->isDirty() && !apply->isEnabled();
-            // Restore the entry state the same way (keeps later tests
-            // hermetic), then close.
-            icons->setCurrentIndex(automatic);
-            QTest::mouseClick(apply, Qt::LeftButton);
-            restored = AppSettings::fromStorage().icons() == IconScheme::Auto;
+        auto *reading = dialog->findChild<QComboBox *>("readingCombo");
+        const int hepburn =
+            reading != nullptr ? reading->findData(static_cast<int>(ReadingDisplay::Hepburn)) : -1;
+        const int kana =
+            reading != nullptr ? reading->findData(static_cast<int>(ReadingDisplay::Kana)) : -1;
+        if (reading != nullptr && hepburn >= 0 && kana >= 0) {
+            reading->setCurrentIndex(hepburn);
+            // Persisted through the MainWindow handler, dialog open.
+            persisted = AppSettings::fromStorage().reading() == ReadingDisplay::Hepburn;
+            staysOpen = dialog->isVisible() && !MainWindow::consumeRecreateRequested();
+            // Restore the entry state the same way (keeps later
+            // tests hermetic), then close.
+            reading->setCurrentIndex(kana);
+            restored = AppSettings::fromStorage().reading() == ReadingDisplay::Kana;
         }
         dialog->reject();
     });
     action->trigger();
-    // Back from the modal: nothing recreated (icons apply live).
+    // Back from the modal: applied live, restored, no recreation.
     QVERIFY(sawDialog);
-    QVERIFY(wasEnabled);
     QVERIFY(persisted);
-    QVERIFY(clean);
+    QVERIFY(staysOpen);
     QVERIFY(restored);
-    QCOMPARE(AppSettings::fromStorage().icons(), IconScheme::Auto);
+    QCOMPARE(AppSettings::fromStorage().reading(), ReadingDisplay::Kana);
+}
+
+void TestMainWindow::settingsDialogModeAppliesLive() {
+    // Normalize first (entry state depends on test order). A
+    // non-default scale proves mode switches never reset the
+    // interface font (style re-creation drops it otherwise).
+    AppSettings baseline;
+    baseline.setScale(1.5);
+    baseline.setStyle(QString());
+    baseline.setMode(ThemeMode::System);
+    baseline.save();
+    AppSettings::shared().load();
+    AppSettings::shared().apply();
+    const double scaledFont = QApplication::font().pointSizeF();
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *action = window->findChild<QAction *>("actionSettings");
+    QVERIFY2(action != nullptr, "settings action missing");
+    // Drive the modal through the real MainWindow path: switch
+    // the color mode and read the effect back. The palette swaps
+    // live (no recreation), persists, and the dialog stays open.
+    // Results land in locals (asserted after the modal returns, so
+    // a failure can never leave the dialog open to hang the suite).
+    bool sawDialog = false;
+    bool persisted = false;
+    bool dark = false;
+    bool staysOpen = false;
+    bool restored = false;
+    bool fontKept = true;
+    QTimer::singleShot(500, [&] {
+        auto *dialog = qobject_cast<SettingsDialog *>(QApplication::activeModalWidget());
+        if (dialog == nullptr) {
+            return;
+        }
+        sawDialog = true;
+        auto *mode = dialog->findChild<QComboBox *>("modeCombo");
+        const int darkAt = mode != nullptr ? mode->findData(static_cast<int>(ThemeMode::Dark)) : -1;
+        const int systemAt =
+            mode != nullptr ? mode->findData(static_cast<int>(ThemeMode::System)) : -1;
+        if (mode != nullptr && darkAt >= 0 && systemAt >= 0) {
+            mode->setCurrentIndex(darkAt);
+            // Persisted through the MainWindow handler, palette
+            // live, dialog open, scale font untouched.
+            persisted = AppSettings::fromStorage().mode() == ThemeMode::Dark;
+            dark = QApplication::palette().color(QPalette::Window).lightness() < 128;
+            fontKept = fontKept &&
+                       qFuzzyCompare(QApplication::font().pointSizeF() + 1.0, scaledFont + 1.0);
+            staysOpen = dialog->isVisible() && !MainWindow::consumeRecreateRequested();
+            // Restore the entry state the same way (keeps later
+            // tests hermetic), then close.
+            mode->setCurrentIndex(systemAt);
+            fontKept = fontKept &&
+                       qFuzzyCompare(QApplication::font().pointSizeF() + 1.0, scaledFont + 1.0);
+            restored = AppSettings::fromStorage().mode() == ThemeMode::System;
+        }
+        dialog->reject();
+    });
+    action->trigger();
+    // Back from the modal: applied live, restored, no recreation.
+    QVERIFY(sawDialog);
+    QVERIFY(persisted);
+    QVERIFY(dark);
+    QVERIFY(fontKept);
+    QVERIFY(staysOpen);
+    QVERIFY(restored);
+    QCOMPARE(AppSettings::fromStorage().mode(), ThemeMode::System);
+    baseline.setScale(1.0);
+    baseline.save();
+    AppSettings::shared().load();
+    AppSettings::shared().apply();
+}
+
+void TestMainWindow::settingsDialogPopupFollowsTheme() {
+    // A runtime style switch must not leave combo popups measuring
+    // with the old style: reopened popups space rows like combos
+    // born under the new style (the dialog rebuilds its combos on
+    // a style change).
+    const QString current =
+        QApplication::style() != nullptr ? QApplication::style()->objectName() : QString();
+    QString target;
+    for (const QString &name : QStyleFactory::keys()) {
+        if (name.compare(current, Qt::CaseInsensitive) != 0) {
+            target = name;
+            break;
+        }
+    }
+    QVERIFY2(!target.isEmpty(), "need a second installed style");
+    AppSettings baseline;
+    baseline.setScale(1.0);
+    baseline.setStyle(QString());
+    baseline.setMode(ThemeMode::System);
+    baseline.save();
+    AppSettings::shared().load();
+    AppSettings::shared().apply();
+    const auto rowHeights = [](QComboBox *combo) {
+        combo->showPopup();
+        QApplication::processEvents();
+        QStringList heights;
+        for (int r = 0; r < combo->count(); ++r) {
+            heights << QString::number(
+                combo->view()->visualRect(combo->model()->index(r, 0)).height());
+        }
+        combo->hidePopup();
+        QApplication::processEvents();
+        return heights.join(QStringLiteral(","));
+    };
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *action = window->findChild<QAction *>("actionSettings");
+    QVERIFY2(action != nullptr, "settings action missing");
+    // Results land in locals (asserted after the modal returns, so
+    // a failure can never leave the dialog open to hang the suite:
+    // no asserts inside the modal handler, reject always runs).
+    bool sawDialog = false;
+    bool dialogVisible = false;
+    int comboCount = 0;
+    bool rebuilt = false;
+    bool visible = false;
+    bool rowsMatch = false;
+    bool restored = false;
+    QTimer::singleShot(500, [&] {
+        auto *dialog = qobject_cast<SettingsDialog *>(QApplication::activeModalWidget());
+        if (dialog == nullptr) {
+            return;
+        }
+        sawDialog = true;
+        dialogVisible = dialog->isVisible();
+        auto *combo = dialog->findChild<QComboBox *>("themeCombo");
+        const int targetAt = combo != nullptr ? combo->findData(target) : -1;
+        const int homeAt = combo != nullptr ? combo->findData(QString()) : -1;
+        if (combo == nullptr || targetAt < 0 || homeAt < 0) {
+            dialog->reject();
+            return;
+        }
+        QComboBox *before = combo;
+        combo->setCurrentIndex(targetAt);
+        // Rebuilt in place on the style switch: the old instance
+        // lingers until deleteLater runs, so expect both — the
+        // fresh one carries the name, the selection, and a place
+        // in the layout.
+        const auto combos = dialog->findChildren<QComboBox *>("themeCombo");
+        comboCount = combos.size();
+        auto *after = combos.isEmpty() ? nullptr : combos.last();
+        rebuilt = combos.size() == 2 && after != nullptr && after != before &&
+                  after->currentData().toString() == target;
+        if (rebuilt) {
+            visible = after->isVisibleTo(dialog);
+            // Fresh combo born under the new style, same items:
+            // reopened popup rows must agree with it.
+            auto *fresh = new QComboBox(dialog);
+            for (int r = 0; r < after->count(); ++r) {
+                fresh->addItem(after->itemText(r), after->itemData(r));
+            }
+            rowsMatch = rowHeights(after) == rowHeights(fresh);
+            // Restore the entry state the same way (keeps later
+            // tests hermetic), then close.
+            after->setCurrentIndex(homeAt);
+            restored = AppSettings::fromStorage().style().isEmpty();
+        }
+        dialog->reject();
+    });
+    action->trigger();
+    qDebug() << "popup-test sawDialog" << sawDialog << "dialogVisible" << dialogVisible
+             << "comboCount" << comboCount;
+    QVERIFY(sawDialog);
+    QVERIFY(rebuilt);
+    QVERIFY(visible);
+    QVERIFY(rowsMatch);
+    QVERIFY(restored);
 }
 
 void TestMainWindow::settingsDialogReportsScale() {
@@ -150,8 +323,8 @@ void TestMainWindow::settingsDialogReportsScale() {
     AppSettings baseline;
     baseline.setScale(1.0);
     baseline.setStyle(QString());
-    baseline.setIcons(IconScheme::Auto);
     baseline.save();
+    AppSettings::shared().load();
     SettingsDialog dialog(nullptr);
     dialog.show();
     QVERIFY(QTest::qWaitForWindowExposed(&dialog));
@@ -164,28 +337,33 @@ void TestMainWindow::settingsDialogReportsScale() {
     auto *stack = dialog.findChild<QStackedWidget *>("settingsStack");
     QVERIFY2(stack != nullptr, "settings stack missing");
     QCOMPARE(stack->currentIndex(), 0);
-    // Untouched: current factor, no warning.
-    QCOMPARE(dialog.selectedScale(), 1.0);
+    // Untouched: current factor, no warning, OK disabled (OK is
+    // only for a staged scale — everything else applies on change).
+    QCOMPARE(dialog.currentSettings().scale(), 1.0);
     auto *warning = dialog.findChild<QLabel *>("scaleWarning");
     QVERIFY2(warning != nullptr, "scale warning missing");
     QVERIFY(!warning->isVisibleTo(&dialog));
-    // Moved: new factor, warning shown. The dialog only reports —
-    // Apply signals out (MainWindow persists + recreates) without
-    // persisting or closing here.
+    auto *buttons = dialog.findChild<QDialogButtonBox *>();
+    QVERIFY2(buttons != nullptr, "button box missing");
+    auto *ok = buttons->button(QDialogButtonBox::Ok);
+    QVERIFY2(ok != nullptr, "OK button missing");
+    QVERIFY(!ok->isEnabled());
+    // Moved: new staged factor, warning shown, OK arms — but the
+    // slider never reports (MainWindow persists nothing until OK).
+    QSignalSpy changed(&dialog, &SettingsDialog::settingsChanged);
     auto *slider = dialog.findChild<QSlider *>();
     QVERIFY2(slider != nullptr, "scale slider missing");
     slider->setValue(150);
-    QCOMPARE(dialog.selectedScale(), 1.5);
+    QCOMPARE(dialog.currentSettings().scale(), 1.5);
     QVERIFY(warning->isVisibleTo(&dialog));
-    auto *buttons = dialog.findChild<QDialogButtonBox *>();
-    QVERIFY2(buttons != nullptr, "button box missing");
-    auto *apply = buttons->button(QDialogButtonBox::Apply);
-    QVERIFY2(apply != nullptr, "Apply button missing");
-    QSignalSpy applied(&dialog, &SettingsDialog::applyRequested);
-    QTest::mouseClick(apply, Qt::LeftButton);
-    QCOMPARE(applied.count(), 1);
-    QVERIFY(dialog.isVisible());
+    QVERIFY(ok->isEnabled());
+    QCOMPARE(changed.count(), 0);
     QCOMPARE(AppSettings::fromStorage().scale(), 1.0);
+    // Restored: notice clears, OK disarms.
+    slider->setValue(100);
+    QVERIFY(!warning->isVisibleTo(&dialog));
+    QVERIFY(!ok->isEnabled());
+    baseline.save();
 }
 
 void TestMainWindow::settingsDialogReadingOptions() {
@@ -199,15 +377,11 @@ void TestMainWindow::settingsDialogReadingOptions() {
     auto *combo = dialog.findChild<QComboBox *>("readingCombo");
     QVERIFY2(combo != nullptr, "reading combo missing");
     QCOMPARE(combo->count(), 3);
-    QCOMPARE(dialog.selectedReading(), ReadingDisplay::Kana);
-    auto *buttons = dialog.findChild<QDialogButtonBox *>();
-    QVERIFY2(buttons != nullptr, "button box missing");
-    auto *apply = buttons->button(QDialogButtonBox::Apply);
-    QVERIFY2(apply != nullptr, "Apply button missing");
-    QVERIFY(!apply->isEnabled());
+    QCOMPARE(dialog.currentSettings().reading(), ReadingDisplay::Kana);
+    QSignalSpy changed(&dialog, &SettingsDialog::settingsChanged);
     combo->setCurrentIndex(combo->findData(static_cast<int>(ReadingDisplay::Hepburn)));
-    QCOMPARE(dialog.selectedReading(), ReadingDisplay::Hepburn);
-    QVERIFY(apply->isEnabled());
+    QCOMPARE(dialog.currentSettings().reading(), ReadingDisplay::Hepburn);
+    QCOMPARE(changed.count(), 1);
     baseline.save();
 }
 
@@ -223,15 +397,11 @@ void TestMainWindow::settingsDialogUpdatesOptOut() {
     auto *check = dialog.findChild<QCheckBox *>("checkUpdatesBox");
     QVERIFY2(check != nullptr, "updates checkbox missing");
     QVERIFY(check->isChecked());
-    QVERIFY(dialog.selectedCheckUpdates());
-    auto *buttons = dialog.findChild<QDialogButtonBox *>();
-    QVERIFY2(buttons != nullptr, "button box missing");
-    auto *apply = buttons->button(QDialogButtonBox::Apply);
-    QVERIFY2(apply != nullptr, "Apply button missing");
-    QVERIFY(!apply->isEnabled());
+    QCOMPARE(dialog.currentSettings().checkUpdates(), true);
+    QSignalSpy changed(&dialog, &SettingsDialog::settingsChanged);
     check->setChecked(false);
-    QVERIFY(!dialog.selectedCheckUpdates());
-    QVERIFY(apply->isEnabled());
+    QCOMPARE(dialog.currentSettings().checkUpdates(), false);
+    QCOMPARE(changed.count(), 1);
     baseline.save();
 }
 
@@ -340,4 +510,36 @@ void TestMainWindow::dataDialogBuildsFromForm() {
             QCOMPARE(button->isEnabled(), present && !required.contains(file));
         }
     }
+}
+
+void TestMainWindow::menuBarFollowsForcedPalette() {
+    // Breeze paints the menu bar from its own theme colors, ignoring
+    // even an explicitly set widget palette: with Light forced the
+    // bar must still come out light (regression: it stayed dark
+    // with dark-on-dark text).
+    if (!QStyleFactory::keys().contains(QStringLiteral("Breeze"), Qt::CaseInsensitive)) {
+        QSKIP("Breeze style not installed");
+    }
+    AppSettings baseline;
+    baseline.setScale(1.0);
+    baseline.setStyle(QStringLiteral("Breeze"));
+    baseline.setMode(ThemeMode::Light);
+    baseline.save();
+    AppSettings::shared().load();
+    AppSettings::shared().apply();
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *bar = window->findChild<QMenuBar *>("menubar");
+    QVERIFY2(bar != nullptr, "menu bar missing");
+    const QColor rendered = bar->grab().toImage().pixelColor(bar->rect().center());
+    // Restore the entry state first (later tests must not inherit
+    // the forced style), then assert.
+    AppSettings restore;
+    restore.setScale(1.0);
+    restore.setStyle(QString());
+    restore.setMode(ThemeMode::System);
+    restore.save();
+    AppSettings::shared().load();
+    AppSettings::shared().apply();
+    QVERIFY2(rendered.lightnessF() > 0.7, qPrintable(rendered.name()));
 }

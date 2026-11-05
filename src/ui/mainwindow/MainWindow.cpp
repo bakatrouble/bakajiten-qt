@@ -41,6 +41,8 @@
 #include <QPoint>
 #include <QProcess>
 #include <QStringList>
+#include <QStyle>
+#include <QStyleFactory>
 #include <QTimer>
 #include <Qt>
 #include <QtGlobal>
@@ -212,35 +214,45 @@ void MainWindow::checkData() {
 }
 
 void MainWindow::openSettings() {
-    // The dialog only reports; unchanged values close with no
-    // effect. Changed appearance persists — a scale change closes
-    // the window for in-process recreation (fresh geometries),
-    // theme + icons apply live — on OK and on Apply alike.
+    // The dialog only reports: theme, readings, and updates apply
+    // on change; OK additionally commits a staged scale (closing
+    // the window for in-process recreation), Cancel drops it.
     SettingsDialog dialog(this);
-    connect(&dialog, &SettingsDialog::applyRequested, this, [this, &dialog] {
-        AppSettings selected;
-        selected.setScale(dialog.selectedScale());
-        selected.setStyle(dialog.selectedStyle());
-        selected.setIcons(dialog.selectedIcons());
-        selected.setReading(dialog.selectedReading());
-        selected.setCheckUpdates(dialog.selectedCheckUpdates());
-        if (applyAppearance(selected)) {
-            dialog.close();
-        } else {
-            // Persisted, staying open: the dialog's baseline is
-            // stale until re-snapped.
-            dialog.markApplied();
-        }
-    });
+    connect(&dialog, &SettingsDialog::settingsChanged, this,
+            [this, &dialog] { (void)applyAppearance(dialog.currentSettings()); });
     if (dialog.exec() == QDialog::Accepted) {
-        AppSettings selected;
-        selected.setScale(dialog.selectedScale());
-        selected.setStyle(dialog.selectedStyle());
-        selected.setIcons(dialog.selectedIcons());
-        selected.setReading(dialog.selectedReading());
-        selected.setCheckUpdates(dialog.selectedCheckUpdates());
-        (void)applyAppearance(selected);
+        (void)applyAppearance(dialog.currentSettings());
     }
+}
+
+void MainWindow::syncMenuBarPalette() {
+    // Breeze paints the menu bar from its own theme colors and
+    // ignores even an explicitly set widget palette, so a forced
+    // Light/Dark mode would leave the bar behind: give the bar a
+    // palette-driven style (Fusion) while a mode is forced,
+    // native styling otherwise. (Kvantum never reaches this
+    // branch: forced modes already divert it to Breeze/Fusion in
+    // applyStyle.) Runs at construction, first show (a per-widget
+    // style set before first show does not take effect on
+    // painting), and every appearance apply.
+    auto *bar = ui->menubar;
+    const bool forced = SettingsStore::shared().current().mode() != ThemeMode::System;
+    const bool breeze = QApplication::style() != nullptr &&
+                        QApplication::style()->objectName().startsWith(QStringLiteral("breeze"),
+                                                                       Qt::CaseInsensitive);
+    if (forced && breeze) {
+        if (!bar->property("menuBarStyleOverride").toBool()) {
+            if (QStyle *fusion = QStyleFactory::create(QStringLiteral("fusion"))) {
+                fusion->setParent(bar);
+                bar->setStyle(fusion);
+                bar->setProperty("menuBarStyleOverride", true);
+            }
+        }
+    } else if (bar->property("menuBarStyleOverride").toBool()) {
+        bar->setStyle(QApplication::style());
+        bar->setProperty("menuBarStyleOverride", false);
+    }
+    bar->setPalette(QApplication::palette());
 }
 
 /// Persist changed appearance; true when the scale changed and the
@@ -262,10 +274,13 @@ bool MainWindow::applyAppearance(const AppSettings &selected) {
         MemorizedState::rescaleWidths(selected.scale() / oldScale);
     }
     if (!scaleChanged) {
-        // Theme + icons take effect immediately (style repolish,
-        // canvas re-reads on repaint): persist, repaint, stay open.
-        // Readings re-render the same way (no recreation needed).
-        selected.applyStyle();
+        // Non-scale changes take effect immediately (style +
+        // palette + font; the style step can reset the font, so
+        // the scaled font below always wins last): persist,
+        // repaint, stay open. Readings re-render the same way
+        // (no recreation needed).
+        selected.apply();
+        syncMenuBarPalette();
         recognizer->update();
         return false;
     }

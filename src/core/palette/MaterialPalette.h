@@ -58,6 +58,11 @@ public:
     /// App accent green (tags, matches, badges): readable ink on
     /// both themes.
     QColor accentGreen() const { return QColor(accentGreenHex(dark)); }
+    /// Article badge fills (common-word green, JLPT blue): darkened
+    /// from the accent/link inks so the white badge text stays
+    /// readable in both themes.
+    QColor badgeGreen() const { return tone(QColor(accentGreenHex(dark)), 0.35F); }
+    QColor badgeBlue() const { return tone(QColor(linkBlueHex(dark)), 0.35F); }
     /// Stroke-order badge fill for stroke `index` of `total`: a
     /// smooth blue → green hue ramp (first stroke blue, last green).
     /// Computed, theme-independent; white text stays readable on

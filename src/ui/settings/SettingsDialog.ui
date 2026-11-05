@@ -130,19 +130,22 @@
             </widget>
            </item>
            <item row="2" column="0">
-            <widget class="QLabel" name="iconsLabel">
+            <widget class="QLabel" name="modeLabel">
              <property name="text">
-              <string>Icons</string>
+              <string>Mode</string>
              </property>
             </widget>
            </item>
            <item row="2" column="1">
-            <widget class="QComboBox" name="iconsCombo">
+            <widget class="QComboBox" name="modeCombo">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
                <horstretch>0</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
+             </property>
+             <property name="toolTip">
+              <string>Follow the system, or force dark / light (forced modes switch Kvantum to a palette-driven style)</string>
              </property>
             </widget>
            </item>
@@ -201,7 +204,7 @@
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="standardButtons">
-      <set>QDialogButtonBox::StandardButton::Apply|QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
+      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
      </property>
     </widget>
    </item>

@@ -79,11 +79,14 @@ private:
     /// Single visibility writer: panel + open-button check state,
     /// no loops (the check change is blocked from re-firing).
     void setRecognizerVisible(bool visible);
-    /// Persist changed appearance; returns true when the scale
-    /// changed and the window is closing for recreation (theme +
-    /// icons apply live). Unchanged is a no-op (false). Shared by
-    /// the OK and Apply paths.
+    /// Persist changed appearance; true when the scale changed and
+    /// the window is closing for recreation (everything else
+    /// applies live). Unchanged is a no-op (false).
     bool applyAppearance(const AppSettings &selected);
+    /// Re-pin the menu bar to the application palette (Breeze
+    /// paints the bar from its own theme colors, ignoring forced
+    /// modes).
+    void syncMenuBarPalette();
 
 private:
     /// Watch both content .ui files; changes funnel into reloadDevUi.

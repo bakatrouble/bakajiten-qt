@@ -15,7 +15,9 @@
 #include <QMouseEvent>
 #include <QObject>
 #include <QPoint>
+#include <QShowEvent>
 #include <QString>
+#include <QStyle>
 #include <QWidget>
 #include <Qt>
 
@@ -66,6 +68,14 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
         setRecognizerVisible(false);
     }
     return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::showEvent(QShowEvent *event) {
+    QMainWindow::showEvent(event);
+    // A per-widget style set before first show does not take
+    // effect on the menu bar (it keeps painting with the app
+    // style); sync once the window exists.
+    syncMenuBarPalette();
 }
 
 void MainWindow::changeEvent(QEvent *event) {

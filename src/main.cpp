@@ -51,6 +51,7 @@ int main(int argc, char *argv[]) {
     // polish). The OS style is captured first so the settings
     // Default entry can name it.
     AppSettings::noteOsStyle();
+    AppSettings::noteOsPalette();
     AppSettings::shared().apply();
     // Explicit fallback chain: Qt's automatic font merging relies on
     // OS font linking, which is broken in some setups (e.g. Wine's

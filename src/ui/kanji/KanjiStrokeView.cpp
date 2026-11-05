@@ -1,6 +1,7 @@
 #include "ui/kanji/KanjiStrokeView.h"
 
 #include "core/palette/MaterialPalette.h"
+#include "core/state/SettingsStore.h"
 #include "recognizer.hpp"
 
 #include <QPaintEvent>
@@ -14,10 +15,6 @@ namespace {
 /// Badge diameter and stroke width relative to the diagram cell.
 constexpr double badgeFraction = 0.075;
 constexpr double strokeFraction = 0.035;
-/// Fixed dark drawing surface (recognizer-canvas roles at their
-/// dark variant, both themes — the badges and light ink need the
-/// contrast everywhere).
-constexpr bool darkPaper = true;
 /// Badge gap as a fraction of the badge diameter: neighbors may
 /// touch, never cover.
 constexpr double gapFraction = 0.1;
@@ -164,6 +161,10 @@ void KanjiStrokeView::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     const MaterialPalette theme = MaterialPalette::fromPalette(palette());
+    // Paper follows the theme like the recognizer canvas (not the
+    // old fixed-dark surface): badges stay readable either way
+    // (medium-dark fills, white numerals).
+    const bool darkPaper = SettingsStore::shared().current().darkPaper();
     painter.fillRect(rect(), MaterialPalette::canvasPaper(darkPaper));
     // Fit the ink with room for the offset badges, kept square.
     const double badge = qMax(12.0, qMin(width(), height()) * badgeFraction);

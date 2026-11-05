@@ -2,6 +2,7 @@
 
 #include <QtTest>
 
+#include "core/settings/Settings.h"
 #include "widgets/list/CandidateList.h"
 #include <QApplication>
 #include <QCheckBox>
@@ -17,6 +18,7 @@
 #include "core/dictionary/DictionaryModel.h"
 #include "core/dictionary/KanjiInfo.h"
 #include "core/settings/MemorizedState.h"
+#include "core/state/SettingsStore.h"
 #include "ui/dictionary/DictionaryWidget.h"
 #include "ui/kanji/KanjiDialog.h"
 #include "ui/kanji/KanjiStrokeView.h"
@@ -797,4 +799,47 @@ void TestMainWindow::kanjiDialogRetargetShowsInfo() {
     dialog->setCharacter(QStringLiteral("日"));
     QCOMPARE(dialog->character(), QStringLiteral("日"));
     QCOMPARE(tabs->currentIndex(), 0);
+}
+
+void TestMainWindow::kanjiStrokeViewFollowsTheme() {
+    // The stroke paper follows the theme (it used to stay dark
+    // unconditionally): median of a center patch, so grid lines
+    // and ink never decide it.
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *table = window->findChild<DictionaryTable *>("resultsTable");
+    QVERIFY2(table != nullptr, "results table missing or not promoted");
+    auto *input = window->findChild<QLineEdit *>("searchInput");
+    QVERIFY2(input != nullptr, "search input missing");
+    auto *model = table->model();
+    QVERIFY2(model != nullptr, "results model missing");
+    input->setText(QStringLiteral("亜鉛"));
+    QTest::keyClick(input, Qt::Key_Return);
+    QTRY_VERIFY_WITH_TIMEOUT(model->rowCount() > 0, 30000);
+    const QRect cell = table->visualRect(model->index(0, 0));
+    QVERIFY(!cell.isNull());
+    QTest::mouseDClick(table->viewport(), Qt::LeftButton, Qt::NoModifier,
+                       cell.topLeft() + QPoint(6, cell.height() / 2));
+    auto *dialog = window->findChild<KanjiDialog *>("kanjiDialog");
+    QVERIFY2(dialog != nullptr, "kanji dialog missing");
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->isVisible(), 5000);
+    auto *view = dialog->findChild<QWidget *>("kanjiStrokeView");
+    QVERIFY2(view != nullptr, "stroke view missing");
+    QApplication::processEvents();
+    const QImage shot = view->grab().toImage();
+    QList<int> samples;
+    const QPoint center = shot.rect().center();
+    for (int y = -6; y <= 6; y += 2) {
+        for (int x = -6; x <= 6; x += 2) {
+            samples << qGray(shot.pixel(center + QPoint(x, y)));
+        }
+    }
+    std::sort(samples.begin(), samples.end());
+    const int paper = samples.at(samples.size() / 2);
+    if (SettingsStore::shared().current().darkPaper()) {
+        QVERIFY2(paper < 90, qPrintable(QStringLiteral("dark paper %1").arg(paper)));
+    } else {
+        QVERIFY2(paper > 180, qPrintable(QStringLiteral("light paper %1").arg(paper)));
+    }
+    dialog->close();
 }

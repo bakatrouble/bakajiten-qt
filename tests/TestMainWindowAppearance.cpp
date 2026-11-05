@@ -123,19 +123,47 @@ void TestMainWindow::themeStrokeBadgeRampsBlueToGreen() {
     QCOMPARE(theme.strokeBadge(0, 0).hslHueF(), first);
 }
 
-void TestMainWindow::iconsResolveFromTheme() {
-    // Explicit choices pass through untouched.
-    AppSettings forced;
-    forced.setIcons(IconScheme::Light);
-    QCOMPARE(forced.resolvedIcons(), IconScheme::Light);
-    forced.setIcons(IconScheme::Dark);
-    QCOMPARE(forced.resolvedIcons(), IconScheme::Dark);
-    // Auto derives from the theme: Fusion's standard palette is
-    // light, so icons come out dark.
-    AppSettings automatic;
-    automatic.setStyle(QStringLiteral("fusion"));
-    automatic.setIcons(IconScheme::Auto);
-    QCOMPARE(automatic.resolvedIcons(), IconScheme::Dark);
+void TestMainWindow::canvasPaperFollowsTheme() {
+    // No icon scheme anymore: canvas paper derives from the theme
+    // (Fusion's standard palette is light, so paper is light).
+    AppSettings light;
+    light.setStyle(QStringLiteral("fusion"));
+    QVERIFY(!light.darkPaper());
+    // A forced mode wins over any probed style palette.
+    AppSettings forcedDark;
+    forcedDark.setStyle(QStringLiteral("fusion"));
+    forcedDark.setMode(ThemeMode::Dark);
+    QVERIFY(forcedDark.darkPaper());
+    AppSettings forcedLight;
+    forcedLight.setStyle(QStringLiteral("fusion"));
+    forcedLight.setMode(ThemeMode::Light);
+    QVERIFY(!forcedLight.darkPaper());
+}
+
+void TestMainWindow::settingsModePalettesAreFixed() {
+    // Forced palettes are hardcoded values, never derived from the
+    // style or system scheme (Fusion adapts its standard palette
+    // to a dark desktop, which used to hand Dark right back for
+    // Light mode; and unset roles like ToolTipBase would fall
+    // through to the dark system scheme, leaving tooltips dark
+    // under a forced Light).
+    AppSettings::noteOsPalette();
+    const QString os = QApplication::palette().color(QPalette::Window).name();
+    AppSettings dark;
+    dark.setMode(ThemeMode::Dark);
+    dark.applyPalette();
+    QVERIFY(QApplication::palette().color(QPalette::Window).lightness() < 128);
+    QVERIFY(QApplication::palette().color(QPalette::ToolTipBase).lightness() < 100);
+    AppSettings light;
+    light.setMode(ThemeMode::Light);
+    light.applyPalette();
+    QVERIFY(QApplication::palette().color(QPalette::Window).lightness() > 200);
+    QVERIFY(QApplication::palette().color(QPalette::ToolTipBase).lightness() > 200);
+    QVERIFY(QApplication::palette().color(QPalette::ToolTipText).lightness() < 128);
+    AppSettings system;
+    system.setMode(ThemeMode::System);
+    system.applyPalette();
+    QCOMPARE(QApplication::palette().color(QPalette::Window).name(), os);
 }
 
 void TestMainWindow::dictionaryKanjiCardFollowsTheme() {
@@ -186,6 +214,19 @@ void TestMainWindow::dictionaryKanjiCardFollowsTheme() {
     dark.setColor(QPalette::ToolTipText, QColor(QStringLiteral("#FFFFFF")));
     QApplication::setPalette(dark);
     QTRY_VERIFY_WITH_TIMEOUT(cardTone() < 100, 5000);
+    // A style-imposed explicit palette must not stick: refresh
+    // re-pins the card to the application palette (Breeze pins a
+    // dark card, which would otherwise survive a Light switch).
+    // Leave first: re-hovering the same glyph dedups to a no-op.
+    QPalette imposed = QApplication::palette();
+    imposed.setColor(QPalette::Window, QColor(QStringLiteral("#282828")));
+    card->setPalette(imposed);
+    QEvent leave(QEvent::Leave);
+    QApplication::sendEvent(table->viewport(), &leave);
+    QApplication::sendEvent(table->viewport(), &hover);
+    QTRY_VERIFY_WITH_TIMEOUT(card->palette().color(QPalette::Window) ==
+                                 QApplication::palette().color(QPalette::Window),
+                             5000);
 }
 
 void TestMainWindow::dictionaryArticleRerendersOnPaletteChange() {
@@ -234,10 +275,12 @@ void TestMainWindow::dictionaryArticleRerendersOnPaletteChange() {
     QApplication::setPalette(switched);
     QApplication::processEvents();
     QTRY_VERIFY_WITH_TIMEOUT(hasInk(QColor(QStringLiteral("#123456"))), 5000);
-    // Badge fill follows the link role (fixed blue per theme), not
-    // the style's Link — re-applied through refreshTheme.
-    QTRY_VERIFY_WITH_TIMEOUT(
-        jlpt->styleSheet().contains(QStringLiteral("#8ab4f8"), Qt::CaseInsensitive), 5000);
+    // Badge fill follows the badge-blue role (darkened link blue
+    // per theme), not the style's Link — re-applied through
+    // refreshTheme.
+    const QColor badgeBlue = MaterialPalette::fromPalette(QApplication::palette()).badgeBlue();
+    QTRY_VERIFY_WITH_TIMEOUT(jlpt->styleSheet().contains(badgeBlue.name(), Qt::CaseInsensitive),
+                             5000);
     QApplication::setPalette(guard.saved);
     QApplication::processEvents();
     QTRY_VERIFY_WITH_TIMEOUT(hasInk(guard.saved.color(QPalette::Text)), 5000);

@@ -47,7 +47,6 @@ void TestMainWindow::settingsDialogScaleRecreates() {
     AppSettings baseline;
     baseline.setScale(1.0);
     baseline.setStyle(QString());
-    baseline.setIcons(IconScheme::Auto);
     baseline.save();
     AppSettings::shared().load();
     AppSettings::shared().apply();
@@ -57,12 +56,13 @@ void TestMainWindow::settingsDialogScaleRecreates() {
     QVERIFY2(window != nullptr, "window never exposed");
     auto *action = window->findChild<QAction *>("actionSettings");
     QVERIFY2(action != nullptr, "settings action missing");
-    // Drive the modal through the real MainWindow Apply path: move
-    // the scale slider and Apply. A scale change persists, applies
-    // the font, and requests in-process recreation (the dialog and
-    // window close; the main loop rebuilds). Results land in locals
-    // (asserted after the modal returns, so a failure can never
-    // leave the dialog open to hang the suite).
+    // Drive the modal through the real MainWindow OK path: move
+    // the scale slider (stages only) and press OK. A scale change
+    // persists, applies the font, and requests in-process
+    // recreation (the dialog and window close; the main loop
+    // rebuilds). Results land in locals (asserted after the modal
+    // returns, so a failure can never leave the dialog open to
+    // hang the suite).
     bool sawDialog = false;
     QTimer::singleShot(500, [&] {
         auto *dialog = qobject_cast<SettingsDialog *>(QApplication::activeModalWidget());
@@ -72,10 +72,10 @@ void TestMainWindow::settingsDialogScaleRecreates() {
         sawDialog = true;
         auto *slider = dialog->findChild<QSlider *>("scaleSlider");
         auto *buttons = dialog->findChild<QDialogButtonBox *>();
-        auto *apply = buttons != nullptr ? buttons->button(QDialogButtonBox::Apply) : nullptr;
-        if (slider != nullptr && apply != nullptr) {
+        auto *ok = buttons != nullptr ? buttons->button(QDialogButtonBox::Ok) : nullptr;
+        if (slider != nullptr && ok != nullptr) {
             slider->setValue(150);
-            QTest::mouseClick(apply, Qt::LeftButton);
+            QTest::mouseClick(ok, Qt::LeftButton);
         }
     });
     action->trigger();
@@ -136,7 +136,6 @@ void TestMainWindow::fontScaleRescalesTableFont() {
     AppSettings baseline;
     baseline.setScale(1.0);
     baseline.setStyle(QString());
-    baseline.setIcons(IconScheme::Auto);
     baseline.save();
     AppSettings::shared().load();
     AppSettings::shared().apply();
@@ -144,7 +143,6 @@ void TestMainWindow::fontScaleRescalesTableFont() {
     AppSettings scaled;
     scaled.setScale(1.5);
     scaled.setStyle(QString());
-    scaled.setIcons(IconScheme::Auto);
     scaled.save();
     AppSettings::shared().load();
     AppSettings::shared().apply();
