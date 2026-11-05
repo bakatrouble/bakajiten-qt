@@ -361,6 +361,11 @@ void TestMainWindow::dictionarySearchScopeCombo() {
     QVERIFY2(model != nullptr, "results model missing");
     QCOMPARE(scope->count(), 3);
     QCOMPARE(scope->currentIndex(), 0);
+    // Item tips name the scope's own dictionary (exactly one file
+    // loads at a time — never "both").
+    QCOMPARE(scope->itemData(0, Qt::ToolTipRole).toString(), QStringLiteral("JMdict words only"));
+    QCOMPARE(scope->itemData(1, Qt::ToolTipRole).toString(), QStringLiteral("JMnedict names only"));
+    QCOMPARE(scope->itemData(2, Qt::ToolTipRole).toString(), QStringLiteral("Kokugo entries only"));
     input->setText(QStringLiteral("たなか"));
     QTest::keyClick(input, Qt::Key_Return);
     QTRY_VERIFY_WITH_TIMEOUT(model->rowCount() > 0, 30000);

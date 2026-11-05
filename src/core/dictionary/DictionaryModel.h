@@ -176,7 +176,6 @@ private:
         QString reading;
         QString meaning;
         QVector<SenseDisplay> senses;
-        bool headingIsKana = false;
         quint32 entSeq = 0;
     };
 
@@ -211,7 +210,8 @@ private:
     quint64 entries = 0;
     std::vector<dict::SearchHit> rows;
     mutable std::vector<std::optional<CachedRow>> cache;
-    /// Query behind the live rows: row display prefers the form
-    /// containing it (see Rust `prefer_keb` / `prefer_reb`).
+    /// Query + edge behind the live rows: row display prefers the
+    /// form matching them (see Rust `prefer_keb` / `prefer_reb`).
     QString lastQuery;
+    dict::SearchMode lastMode = dict::SearchMode::kExact;
 };

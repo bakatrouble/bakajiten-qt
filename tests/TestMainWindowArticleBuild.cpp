@@ -408,6 +408,29 @@ void TestMainWindow::dictionaryRubySelectsKeb() {
     AppSettings::shared().setReading(entry);
 }
 
+void TestMainWindow::readingModeLeavesArticleHeadings() {
+    // Headings always show as packed; only readings follow the
+    // mode (the reading line carries the romaji instead of hiding
+    // as redundant).
+    const ReadingDisplay entry = AppSettings::shared().reading();
+    AppSettings::shared().setReading(ReadingDisplay::Hepburn);
+    ArticleDisplay article;
+    article.heading = QStringLiteral("\u305f\u3079\u308b");
+    article.reading = QStringLiteral("\u305f\u3079\u308b");
+    QString shown;
+    for (const RubyLabel::Span &span : ArticleRuns::headingSpans(article)) {
+        shown += span.keb.isEmpty() ? span.base : span.keb;
+    }
+    QCOMPARE(shown, QStringLiteral("\u305f\u3079\u308b"));
+    const std::optional<QString> line = ArticleRuns::readingLine(article);
+    QVERIFY(line.has_value());
+    QCOMPARE(*line, QStringLiteral("taberu"));
+    // Kana mode hides the redundant line (unchanged).
+    AppSettings::shared().setReading(ReadingDisplay::Kana);
+    QVERIFY(!ArticleRuns::readingLine(article).has_value());
+    AppSettings::shared().setReading(entry);
+}
+
 void TestMainWindow::dictionaryHeadingSelectsFully() {
     // Headword drag-select reaches past the kanji-okurigana
     // boundary to the end (cursor semantics: the end offset is a

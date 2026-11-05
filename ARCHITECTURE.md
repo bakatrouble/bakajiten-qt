@@ -208,7 +208,9 @@ never unwind.
   `search`/`searchMeaning` no-op until ready; `clear()` always
   allowed. Cap is effectively uncapped; layout interpolates.
 - Rows decode lazily at paint (`entry_at`): heading/reading
-  prefer the form containing the query;
+  prefer the form for the matched edge (exact, then
+  edge-anchored, then first containing); the model stores the
+  query + mode behind the live rows;
   `articleFor(row)` builds the full `ArticleDisplay` fresh each
   call (heading, reading, JLPT, kanji, readings, senses with
   `stagk/stagr`, priorities, xrefs).

@@ -139,6 +139,7 @@ private slots:
     void dictionaryArticleUkRendersRed();
     void dictionaryArticleTagTipsPairPerTag();
     void dictionaryRubySelectsKeb();
+    void readingModeLeavesArticleHeadings();
     void dictionaryHeadingSelectsFully();
     void dictionaryArticleTagTooltipShowsDescription();
     void dictionaryArticlePaintsRunInks();
@@ -146,6 +147,8 @@ private slots:
     void dictionaryArticleCloseButtonHidesPane();
     void dictionaryKanaOnlyHeadingTransparent();
     void dictionaryRomajiConvertsBothSchools();
+    void matchedReadingShowsInTable();
+    void readingModeLeavesTableHeadings();
     void dictionaryRomajiBatchConvertsToKana();
     void dictionaryRomajiDisplayShowsPendingTail();
     void dictionaryFuriganaSegments();

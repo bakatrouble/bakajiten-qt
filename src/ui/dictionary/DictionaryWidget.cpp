@@ -161,9 +161,9 @@ void DictionaryWidget::wireUi() {
     applySearchTarget();
     // Scope combo: per-item file tooltips (re-applied per form),
     // index synced from the member below.
-    ui->scopeCombo->setItemData(0, tr("Search both dictionaries"), Qt::ToolTipRole);
-    ui->scopeCombo->setItemData(1, tr("JMdict words only"), Qt::ToolTipRole);
-    ui->scopeCombo->setItemData(2, tr("JMnedict names only"), Qt::ToolTipRole);
+    ui->scopeCombo->setItemData(0, tr("JMdict words only"), Qt::ToolTipRole);
+    ui->scopeCombo->setItemData(1, tr("JMnedict names only"), Qt::ToolTipRole);
+    ui->scopeCombo->setItemData(2, tr("Kokugo entries only"), Qt::ToolTipRole);
     // Exactly one dictionary at a time: missing files refuse at
     // the edge (the option is disabled anyway), valid switches
     // publish — the store's scope stream swaps the file.

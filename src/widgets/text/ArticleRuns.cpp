@@ -14,9 +14,9 @@
 #include <optional>
 
 namespace {
-QString displayHeadword(const QString &heading) {
-    return Romaji::isKana(heading) ? Romaji::displayReading(heading) : heading;
-}
+/// Ruby (furigana) readings follow the mode; headword text never
+/// does — headings always show as packed.
+QString displayRuby(const QString &ruby) { return Romaji::displayReading(ruby); }
 } // namespace
 
 QVector<RubyLabel::Span> ArticleRuns::headingSpans(const ArticleDisplay &article) {
@@ -24,19 +24,18 @@ QVector<RubyLabel::Span> ArticleRuns::headingSpans(const ArticleDisplay &article
     QVector<RubyLabel::Span> spans;
     if (segmented.has_value()) {
         for (const Furigana::Span &span : *segmented) {
-            spans << RubyLabel::Span{span.hasRuby() ? span.text : Romaji::displayReading(span.text),
-                                     span.hasRuby() ? Romaji::displayReading(span.ruby) : QString(),
+            spans << RubyLabel::Span{span.text, span.hasRuby() ? displayRuby(span.ruby) : QString(),
                                      span.text};
         }
         return spans;
     }
-    spans << RubyLabel::Span{displayHeadword(article.heading), {}, article.heading};
+    spans << RubyLabel::Span{article.heading, {}, article.heading};
     return spans;
 }
 
 std::optional<QString> ArticleRuns::readingLine(const ArticleDisplay &article) {
     QString reading = Romaji::displayReading(article.reading);
-    if (reading == displayHeadword(article.heading)) {
+    if (reading == article.heading) {
         return std::nullopt;
     }
     return reading;
@@ -152,8 +151,7 @@ QVector<ArticleRuns::FormBlock> ArticleRuns::formBlocks(const ArticleDisplay &ar
                     block.ruby = true;
                     for (const Furigana::Span &span : *spans) {
                         block.spans << RubyLabel::Span{
-                            span.hasRuby() ? span.text : Romaji::displayReading(span.text),
-                            span.hasRuby() ? Romaji::displayReading(span.ruby) : QString(),
+                            span.text, span.hasRuby() ? displayRuby(span.ruby) : QString(),
                             span.text};
                     }
                     block.notes = elementNotes(element);

@@ -58,6 +58,7 @@ void DictionaryModel::search(const QString &query, dict::SearchMode mode) {
     }
     ++generation;
     lastQuery = query;
+    lastMode = mode;
     emit requestSearch(query, mode, hitCap, generation);
 }
 
@@ -67,6 +68,7 @@ void DictionaryModel::searchMeaning(const QString &query) {
     }
     ++generation;
     lastQuery = query;
+    lastMode = dict::SearchMode::kMiddle;
     emit requestSearchMeaning(query, hitCap, generation);
 }
 
@@ -143,7 +145,9 @@ QVariant DictionaryModel::data(const QModelIndex &index, int role) const {
     }
     switch (index.column()) {
     case 0:
-        return row.headingIsKana ? Romaji::displayReading(row.heading) : row.heading;
+        // Headings always show as packed (kana stays kana): the
+        // readings mode only transliterates readings.
+        return row.heading;
     case 1:
         return Romaji::displayReading(row.reading);
     case 2:

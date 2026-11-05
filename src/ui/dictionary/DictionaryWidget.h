@@ -60,6 +60,13 @@ public:
     /// Candidate pick from the panel: insert at the query cursor
     /// and search.
     void submit(const QString &query);
+    /// Panel query row: step the query cursor (field keeps focus
+    /// so typing continues).
+    void moveCursorLeft();
+    void moveCursorRight();
+    /// Panel query row: delete the character before the query
+    /// cursor and search.
+    void backspaceAtCursor();
     /// Double-clicked kanji anywhere (table, article, candidates):
     /// show the information dialog (silently ignores kana — the
     /// emitters pass raw characters).

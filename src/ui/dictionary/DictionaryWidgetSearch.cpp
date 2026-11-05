@@ -25,6 +25,22 @@ void DictionaryWidget::submit(const QString &query) {
     onSearch();
 }
 
+void DictionaryWidget::moveCursorLeft() {
+    ui->searchInput->cursorBackward(false, 1);
+    ui->searchInput->setFocus(Qt::OtherFocusReason);
+}
+
+void DictionaryWidget::moveCursorRight() {
+    ui->searchInput->cursorForward(false, 1);
+    ui->searchInput->setFocus(Qt::OtherFocusReason);
+}
+
+void DictionaryWidget::backspaceAtCursor() {
+    ui->searchInput->backspace();
+    ui->searchInput->setFocus(Qt::OtherFocusReason);
+    onSearch();
+}
+
 void DictionaryWidget::refreshReadings() {
     model->refreshDisplay();
     // The article renders from the model: re-render the live

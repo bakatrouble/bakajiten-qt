@@ -2,7 +2,6 @@
 
 #include "core/dictionary/DictStore.h"
 #include "dict.hpp"
-#include "util/Romaji.h"
 
 #include <QDebug>
 #include <QString>
@@ -22,13 +21,12 @@ const DictionaryModel::CachedRow &DictionaryModel::rowAt(int row) const {
         const dict::SearchHit &hit = rows[static_cast<std::size_t>(row)];
         try {
             if (const std::optional<dict::DictEntry> entry = DictStore::shared().entryAt(hit.idx)) {
-                fresh.heading =
-                    QString::fromStdString(dict::prefer_keb(*entry, lastQuery.toStdString()));
-                fresh.reading =
-                    QString::fromStdString(dict::prefer_reb(*entry, lastQuery.toStdString()));
+                fresh.heading = QString::fromStdString(
+                    dict::prefer_keb(*entry, lastQuery.toStdString(), lastMode));
+                fresh.reading = QString::fromStdString(
+                    dict::prefer_reb(*entry, lastQuery.toStdString(), lastMode));
                 fresh.meaning = formatSenses(*entry);
                 fresh.senses = displaySenses(*entry);
-                fresh.headingIsKana = Romaji::isKana(fresh.heading);
                 fresh.entSeq = entry->ent_seq;
             }
         } catch (...) {

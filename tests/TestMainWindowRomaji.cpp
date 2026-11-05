@@ -4,6 +4,9 @@
 
 #include <QLineEdit>
 
+#include <QSignalSpy>
+
+#include "core/dictionary/DictionaryModel.h"
 #include "core/settings/Settings.h"
 #include "ui/dictionary/DictionaryWidget.h"
 #include "ui/mainwindow/MainWindow.h"
@@ -150,6 +153,82 @@ void TestMainWindow::dictionaryReadingFollowsSetting() {
     AppSettings::shared().load();
 }
 
+void TestMainWindow::matchedReadingShowsInTable() {
+    // The row shows the reading that matched: query と lists 外
+    // with と (not its first reading そと) and 鶏 with とり (not
+    // にわとり).
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *table = window->findChild<DictionaryTable *>("resultsTable");
+    QVERIFY2(table != nullptr, "results table missing");
+    auto *input = window->findChild<QLineEdit *>("searchInput");
+    QVERIFY2(input != nullptr, "search input missing");
+    auto *dictModel = qobject_cast<DictionaryModel *>(table->model());
+    QVERIFY2(dictModel != nullptr, "not a DictionaryModel");
+    QSignalSpy finished(dictModel, &DictionaryModel::searchFinished);
+    input->setText(QStringLiteral("\u3068"));
+    QTest::keyClick(input, Qt::Key_Return);
+    QTRY_VERIFY_WITH_TIMEOUT(finished.count() == 1, 30000);
+    int soto = -1;
+    for (int row = 0; row < table->model()->rowCount(); ++row) {
+        if (table->model()->index(row, 0).data(Qt::DisplayRole).toString() ==
+            QStringLiteral("\u5916")) {
+            soto = row;
+            break;
+        }
+    }
+    QVERIFY2(soto >= 0, "no \u5916 row for \u3068");
+    QCOMPARE(table->model()->index(soto, 1).data(Qt::DisplayRole).toString(),
+             QStringLiteral("\u3068"));
+    int tori = -1;
+    for (int row = 0; row < table->model()->rowCount(); ++row) {
+        if (table->model()->index(row, 0).data(Qt::DisplayRole).toString() ==
+            QStringLiteral("\u9d8f")) {
+            tori = row;
+            break;
+        }
+    }
+    QVERIFY2(tori >= 0, "no \u9d8f row for \u3068");
+    QCOMPARE(table->model()->index(tori, 1).data(Qt::DisplayRole).toString(),
+             QStringLiteral("\u3068\u308a"));
+}
+
+void TestMainWindow::readingModeLeavesTableHeadings() {
+    // Heading column always shows packed kana; only the reading
+    // column follows the mode.
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *table = window->findChild<DictionaryTable *>("resultsTable");
+    QVERIFY2(table != nullptr, "results table missing");
+    auto *input = window->findChild<QLineEdit *>("searchInput");
+    QVERIFY2(input != nullptr, "search input missing");
+    auto *dictModel = qobject_cast<DictionaryModel *>(table->model());
+    QVERIFY2(dictModel != nullptr, "not a DictionaryModel");
+    QSignalSpy finished(dictModel, &DictionaryModel::searchFinished);
+    input->setText(QStringLiteral("\u3061\u3087\u3063\u3068"));
+    QTest::keyClick(input, Qt::Key_Return);
+    QTRY_VERIFY_WITH_TIMEOUT(finished.count() == 1, 30000);
+    // Kana-only row: heading stays kana, reading romanizes.
+    const ReadingDisplay entry = AppSettings::shared().reading();
+    AppSettings::shared().setReading(ReadingDisplay::Hepburn);
+    QApplication::processEvents();
+    int kana = -1;
+    for (int row = 0; row < table->model()->rowCount(); ++row) {
+        if (table->model()->index(row, 0).data(Qt::DisplayRole).toString() ==
+            QStringLiteral("\u4e00\u5bf8")) {
+            kana = row;
+            break;
+        }
+    }
+    QVERIFY2(kana >= 0, "no kana heading row for \u3061\u3087\u3063\u3068");
+    QCOMPARE(table->model()->index(kana, 0).data(Qt::DisplayRole).toString(),
+             QStringLiteral("\u4e00\u5bf8"));
+    const QString reading = table->model()->index(kana, 1).data(Qt::DisplayRole).toString();
+    QVERIFY2(!reading.isEmpty(), "reading column empty");
+    QVERIFY2(reading.at(0).unicode() < 128, "reading column not romanized");
+    AppSettings::shared().setReading(entry);
+}
+
 void TestMainWindow::dictionaryRomajiBatchConvertsToKana() {
     // Query-edge batch conversion, row-for-row from
     // docs/romaji-kana.md §5 (through the Qt search-text seam,
@@ -229,7 +308,7 @@ void TestMainWindow::dictionaryRomajiDisplayShowsPendingTail() {
         {"shi", "し"},
         {"n", "n"},
         {"na", "な"},
-        {"nn", "んn"},
+        {"nn", "ん"},
         {"nna", "んな"},
         {"t", "t"},
         {"tc", "tc"},
@@ -246,7 +325,7 @@ void TestMainWindow::dictionaryRomajiDisplayShowsPendingTail() {
         {"gakk", "がっk"},
         {"ko", "こ"},
         {"kon", "こn"},
-        {"konn", "こんn"},
+        {"konn", "こん"},
         {"konni", "こんに"},
         {"konnichi", "こんにち"},
         {"konnichiw", "こんにちw"},
