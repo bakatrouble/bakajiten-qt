@@ -296,6 +296,20 @@ void TestMainWindow::toolbarSquareIcons() {
     }
 }
 
+void TestMainWindow::buttonIconContrastsCheckedFill() {
+    // White icon on a white checked button (Kvantum) flips dark;
+    // already-contrasting pairs pass through untouched (Fusion
+    // keeps its dark fill + light ink exactly as before). Names,
+    // not QColors: `==` also compares the internal spec.
+    const auto inkName = [](const QColor &base, const QColor &background) {
+        return ButtonIcon::contrastingInk(base, background).name();
+    };
+    QCOMPARE(inkName(QColor(Qt::white), QColor(Qt::white)), QStringLiteral("#000000"));
+    QCOMPARE(inkName(QColor(Qt::white), QColor(Qt::black)), QStringLiteral("#ffffff"));
+    QCOMPARE(inkName(QColor(Qt::black), QColor(Qt::white)), QStringLiteral("#000000"));
+    QCOMPARE(inkName(QColor(Qt::black), QColor(Qt::black)), QStringLiteral("#ffffff"));
+}
+
 void TestMainWindow::queryButtonsSquareAndToolbarSpans() {
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");

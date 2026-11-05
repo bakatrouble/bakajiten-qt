@@ -17,6 +17,7 @@ private slots:
     void cleanupTestCase();
     void panelHiddenByDefault();
     void toolbarSquareIcons();
+    void buttonIconContrastsCheckedFill();
     void openButtonShowsPanel();
     void openButtonTogglesPanelClosed();
     void panelOpensUnderButton();

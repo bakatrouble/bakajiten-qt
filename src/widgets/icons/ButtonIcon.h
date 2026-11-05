@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QColor>
 #include <QIcon>
 #include <QSize>
 #include <QString>
@@ -12,6 +13,9 @@ class QWidget;
 /// renderer can't be trusted with `currentColor`, so the tint lands
 /// before render). `apply` records the name on the button;
 /// `refresh` re-tints everything under a widget on theme switches.
+/// The checked-On state renders in a contrasting ink sampled
+/// against the style's real checked-button fill (white under
+/// Kvantum, dark under Fusion) instead of the plain button text.
 class ButtonIcon {
 public:
     /// Rendered icon side (the 40px buttons center it).
@@ -24,4 +28,7 @@ public:
     static void refresh(QWidget *root);
     /// One themed icon (for tests and one-offs).
     static QIcon icon(const QString &name);
+    /// Ink readable on `background`: `base` untouched when it
+    /// already stands out, lightness-flipped otherwise.
+    static QColor contrastingInk(const QColor &base, const QColor &background);
 };

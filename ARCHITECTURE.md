@@ -405,7 +405,10 @@ style Link roles go near-white on dark themes), selection,
 hover wash, deinflected tint, kana spots, badges (blue→green
 HSL ramp), canvas paper/grid/ink (paper flag, not palette),
 edge-fade ends. `ButtonIcon` re-tints bundled SVGs
-(`currentColor` replaced at pixmap time) on theme switch.
+(`currentColor` replaced at pixmap time) on theme switch;
+the checked-On state renders in a contrasting ink sampled
+against the style's real checked-button fill (white under
+Kvantum, dark under Fusion).
 
 ## 16. Packaging and install layout
 
