@@ -6,7 +6,12 @@
 
 #include <QList>
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
 #include "core/data/DataManifest.h"
+#include "core/recognizer/ModelPack.h"
 
 class QFile;
 class QNetworkAccessManager;
@@ -18,6 +23,12 @@ class QNetworkReply;
 /// reports per file (the dialog aggregates); `fileFinished` lands
 /// per install. First failure cancels the rest and reports once.
 /// `cancel` aborts silently and drops the partials.
+///
+/// Handwriting model packs ride the same signals under one key
+/// (`downloadModel`): dl.google.com zips, sha1-verified, unzipped
+/// member installed atomically, one pack at a time with cumulative
+/// progress. A separate instance per job class keeps the manifest
+/// write (dict jobs only) from ever touching model runs.
 class DataDownloader : public QObject {
     Q_OBJECT
 public:
@@ -27,6 +38,11 @@ public:
     /// decides the set). Empty sets finish immediately.
     void download(const DataManifest &remote, const QByteArray &manifestBytes,
                   const QStringList &files);
+    /// Download a model pack set (verified zips cached under
+    /// `<root>/.zips`, installed artifacts under `<root>/ja`).
+    /// Cache hits skip the network.
+    void downloadModel(const QString &key, const std::vector<ModelPacks::Pack> &packs,
+                       const QString &rootDir);
     void cancel();
 
 signals:
@@ -54,8 +70,23 @@ private:
     /// landings only clean up), report once.
     void failAll(const QString &reason);
     /// Manifest lands + `finished`, once the queue and the in-flight
-    /// set are both empty.
+    /// set are both empty (manifest write for dict jobs only).
     void maybeFinish();
+    /// Start the next model pack needing work (cached zips and
+    /// installed artifacts skip the network).
+    void startModelOne();
+    /// Verify + unpack + install the finished pack, then advance.
+    void finishModelOne(const QString &zipPart);
+    /// Convert the installed sources into the runtime bundle
+    /// (`network.safetensors`) once every pack has landed; drops
+    /// the obsolete word-LM artifacts. Pure work, no network.
+    bool ensureConverted(QString &reason);
+    /// Install one pack from zip bytes (sha1, single-member pick,
+    /// size check, atomic rename). Pure work, no network.
+    bool installModelPack(const ModelPacks::Pack &pack, const QByteArray &zipBytes,
+                          QString &reason);
+    /// Sum of the model pack zips (the honest download total).
+    qint64 modelTotal() const;
 
     static constexpr int kMaxParallel = 4;
 
@@ -65,4 +96,13 @@ private:
     QStringList queue;
     QList<Transfer> active;
     bool aborting = false;
+    /// Model-pack job state (empty unless `downloadModel` ran).
+    QString modelKey;
+    std::vector<ModelPacks::Pack> modelPacks;
+    QString modelRoot;
+    std::size_t modelIndex = 0;
+    qint64 modelBase = 0;
+    QNetworkReply *modelReply = nullptr;
+    /// Dict jobs write the manifest on finish; model jobs never do.
+    bool manifestJob = false;
 };

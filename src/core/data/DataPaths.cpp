@@ -19,8 +19,7 @@ QString DataPaths::filePath(const QString &file) { return QDir(directory()).file
 QString DataPaths::manifestPath() { return filePath(QStringLiteral("manifest.json")); }
 
 QStringList DataPaths::requiredFiles() {
-    return {QStringLiteral("jmdict.bin"), QStringLiteral("kanji.bin"),
-            QStringLiteral("templates.bin")};
+    return {QStringLiteral("jmdict.bin"), QStringLiteral("kanji.bin")};
 }
 
 QStringList DataPaths::optionalFiles() {
@@ -43,9 +42,6 @@ QString DataPaths::displayName(const QString &file) {
     }
     if (file == QStringLiteral("kanji.bin")) {
         return QStringLiteral("Kanji");
-    }
-    if (file == QStringLiteral("templates.bin")) {
-        return QStringLiteral("Handwriting");
     }
     return file;
 }

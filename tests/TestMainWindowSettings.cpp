@@ -252,9 +252,11 @@ void TestMainWindow::dataDialogBuildsFromForm() {
     auto *buttons = dialog.findChild<QDialogButtonBox *>();
     QVERIFY2(buttons != nullptr, "button box missing");
     QVERIFY2(buttons->button(QDialogButtonBox::Close) != nullptr, "Close button missing");
-    // Two section headers plus one row widget per artifact file.
+    // Two section headers plus one row widget per artifact file,
+    // with the Japanese handwriting row at the end of Required
+    // (dl.google.com pack, not a release artifact).
     const auto rows = dialog.findChildren<DictionaryManagerRow *>();
-    QCOMPARE(rows.size(), DataPaths::allFiles().size());
+    QCOMPARE(rows.size(), DataPaths::allFiles().size() + 1);
     int actions = 0;
     int removes = 0;
     bool requiredHeader = false;
@@ -268,6 +270,7 @@ void TestMainWindow::dataDialogBuildsFromForm() {
     }
     QVERIFY2(requiredHeader, "Required header missing");
     QVERIFY2(optionalHeader, "Optional header missing");
+    bool handwritingRow = false;
     for (const DictionaryManagerRow *row : rows) {
         const auto rowButtons = row->findChildren<QPushButton *>();
         QCOMPARE(rowButtons.size(), 2);
@@ -281,20 +284,57 @@ void TestMainWindow::dataDialogBuildsFromForm() {
         const auto rowBars = row->findChildren<QProgressBar *>();
         QCOMPARE(rowBars.size(), 1);
         QVERIFY(!rowBars.front()->isVisibleTo(&dialog));
+        if (row->dataFile() == QStringLiteral("handwriting")) {
+            handwritingRow = true;
+            QCOMPARE(row->fileName(), QStringLiteral("Japanese handwriting"));
+        }
     }
-    QCOMPARE(actions, DataPaths::allFiles().size());
-    QCOMPARE(removes, DataPaths::allFiles().size());
+    QVERIFY2(handwritingRow, "handwriting row missing");
+    // Required placement: after the required dictionary rows,
+    // before anything optional (children order is layout order).
+    int handwritingAt = -1;
+    int lastRequiredAt = -1;
+    int firstOptionalAt = -1;
+    for (int i = 0; i < rows.size(); ++i) {
+        const QString file = rows.at(i)->dataFile();
+        if (file == QStringLiteral("handwriting")) {
+            handwritingAt = i;
+        } else if (DataPaths::requiredFiles().contains(file)) {
+            lastRequiredAt = i;
+        } else if (firstOptionalAt < 0) {
+            firstOptionalAt = i;
+        }
+    }
+    QVERIFY(handwritingAt > lastRequiredAt);
+    QVERIFY(firstOptionalAt < 0 || handwritingAt < firstOptionalAt);
+    QCOMPARE(actions, DataPaths::allFiles().size() + 1);
+    QCOMPARE(removes, DataPaths::allFiles().size() + 1);
     // Required artifacts never offer individual delete: their
     // Remove buttons stay disabled (opt-ins stay armed); a full
     // reset goes through the Clear cached files button.
     const auto required = DataPaths::requiredFiles();
     for (const DictionaryManagerRow *row : rows) {
         const QString file = row->dataFile();
-        QVERIFY2(DataPaths::allFiles().contains(file), "row without artifact");
-        const bool present = QFileInfo::exists(DataPaths::filePath(file));
+        QVERIFY2(file == QStringLiteral("handwriting") || DataPaths::allFiles().contains(file),
+                 "row without artifact");
+        // Handwriting presence is the cached pack (a directory),
+        // not a data-dir file: read it off the rendered status.
+        bool present = QFileInfo::exists(DataPaths::filePath(file));
+        if (file == QStringLiteral("handwriting")) {
+            const auto *status = row->findChild<QLabel *>("rowStatus");
+            QVERIFY2(status != nullptr, "handwriting status missing");
+            present = status->text().startsWith(QStringLiteral("Downloaded"));
+        }
         const auto rowButtons = row->findChildren<QPushButton *>();
         for (const QPushButton *button : rowButtons) {
             if (button->text() != QStringLiteral("Remove")) {
+                continue;
+            }
+            if (file == QStringLiteral("handwriting")) {
+                // Required model: no individual Remove at all —
+                // like the required dictionaries below.
+                QVERIFY(!button->isVisibleTo(&dialog));
+                QVERIFY(!button->isEnabled());
                 continue;
             }
             QCOMPARE(button->isEnabled(), present && !required.contains(file));

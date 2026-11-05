@@ -14,11 +14,9 @@
 #include "widgets/list/CandidateList.h"
 #include "widgets/toolbutton/ToolButtonFit.h"
 
-#include <QByteArray>
 #include <QCloseEvent>
 #include <QDebug>
 #include <QEvent>
-#include <QFile>
 #include <QGraphicsDropShadowEffect>
 #include <QListWidget>
 #include <QLoggingCategory>
@@ -41,17 +39,6 @@
 #include <vector>
 
 Q_LOGGING_CATEGORY(uiDevLog, "ui.dev");
-
-namespace {
-/// Template-bank location: the data dir, with an explicit `MODEL`
-/// override for dev runs (documented escape hatch, not a search).
-QString templatePath() {
-    if (const QByteArray env = qgetenv("MODEL"); !env.isEmpty()) {
-        return QString::fromLocal8Bit(env);
-    }
-    return DataPaths::filePath(QStringLiteral("templates.bin"));
-}
-} // namespace
 
 RecognizerWidget::RecognizerWidget(QWidget *parent) : QWidget(parent) {
     // Plain child widget on purpose: NO Qt::Window flag. A parented
@@ -88,9 +75,9 @@ RecognizerWidget::RecognizerWidget(QWidget *parent) : QWidget(parent) {
     shadow->setColor(MaterialPalette::scrim(0.7F));
     setGraphicsEffect(shadow);
 
-    // Match thread owns the bank from here on: register the queued
-    // payloads, wire requests one way and results back, then ask for
-    // the first model on disk (fallbacks cascade on failure).
+    // Match thread owns the model from here on: wire requests
+    // one way and results back, then ask for the cached pack (the
+    // Dictionaries dialog downloads it when missing).
     qRegisterMetaType<QVector<QVector<QPointF>>>();
     qRegisterMetaType<std::vector<Recognizer::Hit>>();
     recognizerWorker = new RecognizerWorker;
@@ -104,43 +91,36 @@ RecognizerWidget::RecognizerWidget(QWidget *parent) : QWidget(parent) {
     connect(recognizerWorker, &RecognizerWorker::recognized, this, &RecognizerWidget::onRecognized);
     matchThread.start();
 
-    ui->statusLabel->setText(tr("Loading model…"));
+    ui->statusLabel->setText(tr("Loading handwriting model…"));
     tryLoadModel();
     updateStatus();
 }
 
-/// Ask the worker for the data-dir bank when present; otherwise
-/// settle on the missing-model text (the Dictionaries dialog
-/// fetches it).
+/// Ask the worker for the cached model (never downloads).
 void RecognizerWidget::tryLoadModel() {
-    const QString path = templatePath();
-    if (QFile::exists(path)) {
-        emit requestLoadModel(path);
-        return;
-    }
     modelReady = false;
-    ui->statusLabel->setText(tr("No templates.bin yet — open Help > Dictionaries to download it."));
+    emit requestLoadModel();
 }
 
-/// Reload bank + kanji info from the data dir (called after
+/// Reload model + kanji info from the data dir (called after
 /// dictionary downloads land).
 void RecognizerWidget::reloadModel() {
     kanjiInfo->load(DataPaths::filePath(QStringLiteral("kanji.bin")));
+    Recognizer::shared().reset();
     modelReady = false;
-    templateCount = 0;
     tryLoadModel();
     updateStatus();
 }
 
-void RecognizerWidget::onModelLoaded(const QString &path, bool ok, quint64 templates) {
+void RecognizerWidget::onModelLoaded(bool ok, bool /*hasLanguageModel*/) {
     if (!ok) {
         modelReady = false;
-        ui->statusLabel->setText(tr("Could not read the handwriting model."));
+        ui->statusLabel->setText(
+            tr("No handwriting model yet — open Help > Dictionaries to download it."));
         return;
     }
-    templateCount = templates;
     modelReady = true;
-    ui->statusLabel->setToolTip(path);
+    ui->statusLabel->setToolTip(tr("Japanese handwriting model"));
     updateStatus();
 }
 

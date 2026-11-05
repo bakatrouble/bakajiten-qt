@@ -5,8 +5,6 @@
 #include "core/dictionary/DictionaryModel.h"
 #include "core/dictionary/KanjiInfo.h"
 #include "core/palette/MaterialPalette.h"
-#include "core/recognizer/Recognizer.h"
-#include "core/recognizer/RecognizerWorker.h"
 #include "core/settings/MemorizedState.h"
 #include "dev/UiForm.h"
 #include "ui/kanji/KanjiStrokeView.h"
@@ -40,8 +38,6 @@
 #include <Qt>
 #include <QtGlobal>
 
-#include <vector>
-
 KanjiDialog::KanjiDialog(KanjiInfo *info, DictionaryModel *modelIn, QWidget *parent)
     : QDialog(parent), kanjiInfo(info), model(modelIn) {
     auto [built, form] = buildForm<Ui::KanjiDialog>(this, "ui/kanji/KanjiDialog.ui");
@@ -59,8 +55,6 @@ void KanjiDialog::wireUi() {
     infoLabel = ui->kanjiInfo;
     counter = ui->kanjiStrokeCounter;
     wordsTable = ui->kanjiWordsTable;
-    similarCheck = ui->kanjiSimilarCheck;
-    similarStrip = ui->kanjiSimilarStrip;
     partsCheck = ui->kanjiPartsCheck;
     partsStrip = ui->kanjiPartsStrip;
     partOfCheck = ui->kanjiPartOfCheck;
@@ -96,35 +90,21 @@ void KanjiDialog::wireUi() {
         connect(wordsModel, &DictionaryModel::loaded, this, &KanjiDialog::onWordsLoaded);
     }
     // Checkbox rows (headings in the form; strips fill on load).
-    wireStripRow(similarCheck, similarStrip, MemorizedState::KanjiStrip::Similar);
     wireStripRow(partsCheck, partsStrip, MemorizedState::KanjiStrip::Parts);
     wireStripRow(partOfCheck, partOfStrip, MemorizedState::KanjiStrip::PartOf);
     // Kanji loads run on the model's worker (one thread for the
     // whole dictionary UI); stale generations drop on arrival.
     // The model outlives the dialog (member order in the widget).
-    qRegisterMetaType<std::vector<Recognizer::Hit>>();
     if (model != nullptr && model->dictWorker() != nullptr) {
         auto *worker = model->dictWorker();
         connect(this, &KanjiDialog::requestLoad, worker, &DictWorker::loadParts);
         connect(this, &KanjiDialog::requestLoad, worker, &DictWorker::loadPartOf);
         connect(worker, &DictWorker::partsLoaded, this, &KanjiDialog::onPartsLoaded);
         connect(worker, &DictWorker::partOfLoaded, this, &KanjiDialog::onPartOfLoaded);
-        // Similar matching has its own worker (same model thread).
-        similarWorker = new RecognizerWorker;
-        similarWorker->moveToThread(model->workerThread());
-        connect(this, &KanjiDialog::requestLoad, similarWorker, &RecognizerWorker::loadSimilar);
-        connect(similarWorker, &RecognizerWorker::similarLoaded, this,
-                &KanjiDialog::onSimilarLoaded);
     }
 }
 
-KanjiDialog::~KanjiDialog() {
-    // Workers die with their threads (both model-owned): queued
-    // answers to a dead dialog drop on their own.
-    if (similarWorker != nullptr) {
-        similarWorker->deleteLater();
-    }
-}
+KanjiDialog::~KanjiDialog() = default;
 
 void KanjiDialog::wireStripRow(QCheckBox *check, CandidateList *strip,
                                MemorizedState::KanjiStrip kind) {
@@ -214,7 +194,6 @@ void KanjiDialog::setCharacter(const QString &ch) {
     if (wordsModel != nullptr) {
         wordsModel->search(ch, dict::SearchMode::kMiddle);
     }
-    similarStrip->clear();
     partsStrip->clear();
     partOfStrip->clear();
     emit requestLoad(ch, ++loadGeneration);
@@ -379,22 +358,6 @@ void KanjiDialog::onWordClicked(const QModelIndex &index) {
     if (!query.isEmpty()) {
         emit wordActivated(query);
     }
-}
-
-void KanjiDialog::onSimilarLoaded(const std::vector<Recognizer::Hit> &hits, quint64 generation) {
-    // Stale generation (retarget mid-flight): drop it.
-    if (generation != loadGeneration) {
-        return;
-    }
-    if (hits.empty()) {
-        similarCheck->setChecked(false);
-        return;
-    }
-    QVector<CandidateHit> cells;
-    for (const Recognizer::Hit &hit : hits) {
-        cells << CandidateHit{hit.text, static_cast<double>(hit.score)};
-    }
-    similarStrip->setHits(cells);
 }
 
 void KanjiDialog::onPartsLoaded(const QStringList &parts, quint64 generation) {

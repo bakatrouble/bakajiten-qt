@@ -249,19 +249,6 @@
     </widget>
    </item>
    <item>
-    <widget class="QCheckBox" name="kanjiSimilarCheck">
-     <property name="text">
-      <string>Similar</string>
-     </property>
-     <property name="checked">
-      <bool>false</bool>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="CandidateList" name="kanjiSimilarStrip"/>
-   </item>
-   <item>
     <widget class="QCheckBox" name="kanjiPartsCheck">
      <property name="text">
       <string>Parts</string>

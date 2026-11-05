@@ -37,7 +37,8 @@ private slots:
     void updaterLaterSuppressesSession();
     void fadesFollowScrollability();
     void queryTimeShownAfterStroke();
-    void candidateScriptColors();
+    void candidateStripShowsHits();
+    void candidateHoverShowsGlyphUnderCursor();
     void candidateClickInsertsQuery();
     void candidateInsertsAtCursor();
     void candidateDoubleClickOpensDialog();
@@ -58,7 +59,6 @@ private slots:
     void kanjiStrokeBadgesAvoidOverlap();
     void kanjiInfoStrokesFromData();
     void kanjiDialogWordsTab();
-    void kanjiDialogSimilarStrip();
     void kanjiDialogPartsStrip();
     void kanjiDialogPartOfStrip();
     void kanjiDialogStripShowsKanjiTip();

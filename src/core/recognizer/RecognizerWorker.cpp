@@ -1,42 +1,25 @@
 #include "core/recognizer/RecognizerWorker.h"
 
-#include "core/dictionary/DictStore.h"
-
-#include <QDebug>
 #include <QElapsedTimer>
-
-namespace {
-/// Similar-strip cap.
-constexpr uint32_t similarShown = 12;
-} // namespace
 
 RecognizerWorker::RecognizerWorker(QObject *parent) : QObject(parent) {}
 
-void RecognizerWorker::loadModel(const QString &path) {
+void RecognizerWorker::loadModel() {
     auto &shared = Recognizer::shared();
-    const bool ok = shared.loadModel(path);
-    emit modelLoaded(path, ok, shared.templateCount());
+    const bool ok = shared.loadModel();
+    emit modelLoaded(ok, ok && shared.hasLanguageModel());
 }
 
-void RecognizerWorker::recognize(QVector<QVector<QPointF>> strokes, quint32 topK, bool includeKana,
+void RecognizerWorker::recognize(QVector<QVector<QPointF>> strokes, quint32 topK,
                                  quint64 generation) {
+    // No model, no download: the Dictionaries dialog is the only
+    // surface that fetches the pack.
+    if (!Recognizer::shared().hasModel()) {
+        emit recognized({}, 0.0, generation);
+        return;
+    }
     QElapsedTimer timer;
     timer.start();
-    const std::vector<Recognizer::Hit> hits =
-        Recognizer::shared().recognize(strokes, topK, includeKana);
+    const std::vector<Recognizer::Hit> hits = Recognizer::shared().recognize(strokes, topK);
     emit recognized(hits, static_cast<double>(timer.nsecsElapsed()) / 1e6, generation);
-}
-
-void RecognizerWorker::loadSimilar(const QString &ch, quint64 generation) {
-    std::vector<Recognizer::Hit> hits;
-    try {
-        for (const Recognizer::Hit &hit : DictStore::shared().similarKanji(ch, similarShown)) {
-            hits.push_back(hit);
-        }
-    } catch (...) {
-        // Same policy as the match path: corrupt data yields
-        // nothing, never unwinds.
-        qWarning() << "RecognizerWorker: similar load failed";
-    }
-    emit similarLoaded(hits, generation);
 }

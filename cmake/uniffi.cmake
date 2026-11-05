@@ -49,6 +49,7 @@ add_custom_command(
 # tree).
 add_library(uniffi_recognizer STATIC
     ${UNIFFI_CPP_OUT_DIR}/recognizer.cpp
+    src/core/recognizer/ModelPack.cpp
     src/core/recognizer/Recognizer.cpp
     src/core/recognizer/RecognizerWorker.cpp
 )

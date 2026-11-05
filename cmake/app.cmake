@@ -50,6 +50,7 @@ add_executable(bakajiten
     src/ui/recognizer/RecognizerWidgetChrome.cpp
     src/widgets/list/CandidateListDelegate.cpp
     src/widgets/list/CandidateList.cpp
+    src/widgets/list/RecognizerCandidateList.cpp
     src/ui/recognizer/Candidates.cpp
     src/ui/recognizer/Strokes.cpp
     src/ui/recognizer/Drag.cpp

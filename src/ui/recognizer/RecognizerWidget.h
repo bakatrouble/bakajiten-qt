@@ -22,7 +22,7 @@ class QListWidgetItem;
 /// `RecognizerWidget.ui` — compiled uic in release, QUiLoader in dev
 /// builds (same `Ui::` struct either way, see `dev/UiForm.h`).
 /// Strokes live here (for painting and matching alike) and are
-/// passed per query to the match worker (template bank on a QThread);
+/// passed per query to the match worker (model handle on a QThread);
 /// undo/redo are plain vector moves.
 class RecognizerWidget : public QWidget {
     Q_OBJECT
@@ -30,7 +30,7 @@ public:
     explicit RecognizerWidget(QWidget *parent = nullptr);
     ~RecognizerWidget() override;
 
-    /// Reload the bank + kanji info from the data dir (called
+    /// Reload the model + kanji info from the data dir (called
     /// after dictionary downloads land).
     void reloadModel();
 
@@ -51,8 +51,9 @@ signals:
     /// Emitted when the panel's close button hides it, so the View
     /// menu toggle stays in sync.
     void panelClosed();
-    /// Match-bank load request (worker thread).
-    void requestLoadModel(const QString &path);
+    /// Model load request (worker thread; cache only — the
+    /// Dictionaries dialog is the only download surface).
+    void requestLoadModel();
     /// Score request (worker thread): strokes by value, echoed
     /// generation id for staleness checks.
     void requestRecognize(QVector<QVector<QPointF>> strokes, quint32 topK, bool includeKana,
@@ -79,9 +80,9 @@ private slots:
     /// Worker reply: apply unless superseded (id mismatch).
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     void onRecognized(const std::vector<Recognizer::Hit> &hits, double matchMs, quint64 generation);
-    /// Bank load settled: cache the count (a corrupt file reads
-    /// as a failed load, like a missing one).
-    void onModelLoaded(const QString &path, bool ok, quint64 templateCount);
+    /// Model load settled: a corrupt download reads as a failed
+    /// load, like a missing one.
+    void onModelLoaded(bool ok, bool hasLanguageModel);
     void onUndo();
     void onRedo();
     void onClear();
@@ -103,26 +104,22 @@ private:
     /// shared fit grows the side with the interface font, keeping
     /// them square).
     static constexpr int chromeButton = 40;
-    /// Ask the worker for the data-dir bank when present (the
-    /// Dictionaries dialog fetches it when missing).
+    /// Ask the worker for the model (downloads it on first use).
     void tryLoadModel();
 
     Ui::RecognizerWidget *ui = nullptr;
     /// Loader-built form (dev only; null with compiled uic).
     QWidget *devForm = nullptr;
-    /// Match thread: the worker owns the template bank there; every
-    /// bank access goes through the queued request/result signals
+    /// Match thread: the worker owns the model there; every
+    /// model access goes through the queued request/result signals
     /// (never touch a `Recognizer` on this thread).
     QThread matchThread;
     RecognizerWorker *recognizerWorker = nullptr;
     /// Monotonic query id; results echoing an older id are stale
     /// (strokes changed mid-flight) and dropped on arrival.
     quint64 matchGeneration = 0;
-    /// Last loaded template count (worker-bank mirror for the status
-    /// line; the bank itself stays on the worker).
-    quint64 templateCount = 0;
-    /// Bank settled (loaded or definitively missing): gates the
-    /// status line, which otherwise keeps its loading/missing text.
+    /// Model settled (loaded or definitively failed): gates the
+    /// status line, which otherwise keeps its loading text.
     bool modelReady = false;
     /// Kanji hover info (optional `kanji.bin`; outlives the form).
     KanjiInfo *kanjiInfo = nullptr;

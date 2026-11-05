@@ -14,7 +14,7 @@
 class MemorizedState {
 public:
     /// Which kanji-dialog strip (one open-state flag each).
-    enum class KanjiStrip : std::uint8_t { Similar, Parts, PartOf };
+    enum class KanjiStrip : std::uint8_t { Parts, PartOf };
 
     /// Fixed results-column widths, 0 when never memorized.
     static int resultsHeadingWidth();

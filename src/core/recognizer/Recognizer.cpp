@@ -2,6 +2,9 @@
 
 #include "recognizer.hpp"
 
+#include "core/data/DataPaths.h"
+#include "core/recognizer/ModelPack.h"
+
 #include <QByteArray>
 #include <QFile>
 
@@ -27,10 +30,20 @@ std::vector<Recognizer::Hit> toHits(const std::vector<recognizer::Candidate> &hi
     std::vector<Recognizer::Hit> out;
     for (const recognizer::Candidate &hit : hits) {
         out.push_back(Recognizer::Hit{
-            QString::fromUtf8(hit.character.data(), static_cast<qsizetype>(hit.character.size())),
-            hit.distance, hit.is_kana});
+            QString::fromUtf8(hit.text.data(), static_cast<qsizetype>(hit.text.size())),
+            hit.score});
     }
     return out;
+}
+
+/// Read one artifact file; empty when missing/unreadable.
+std::vector<std::uint8_t> readBytes(const QString &path) {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    const QByteArray bytes = file.readAll();
+    return std::vector<std::uint8_t>(bytes.begin(), bytes.end());
 }
 } // namespace
 
@@ -39,27 +52,29 @@ Recognizer &Recognizer::shared() {
     return instance;
 }
 
-bool Recognizer::loadModel(const QString &path) {
+bool Recognizer::loadModel() {
     const std::lock_guard<std::mutex> lock(mutex);
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        recognizer.reset();
-        return false;
-    }
-    const QByteArray bytes = file.readAll();
+    return loadLocked();
+}
+
+void Recognizer::reset() {
+    const std::lock_guard<std::mutex> lock(mutex);
+    recognizer.reset();
+}
+
+bool Recognizer::loadLocked() {
     try {
-        recognizer =
-            recognizer::Recognizer::init(std::vector<std::uint8_t>(bytes.begin(), bytes.end()));
+        const std::vector<std::uint8_t> bundle = readBytes(ModelPacks::safetensorsPath());
+        if (bundle.empty()) {
+            recognizer.reset();
+            return false;
+        }
+        recognizer = recognizer::Recognizer::init(bundle);
     } catch (const recognizer::RecognizerError &) {
         recognizer.reset();
         return false;
     }
-    return true;
-}
-
-std::uint64_t Recognizer::templateCount() const {
-    const std::lock_guard<std::mutex> lock(mutex);
-    return recognizer == nullptr ? 0 : recognizer->template_count();
+    return recognizer != nullptr;
 }
 
 bool Recognizer::hasModel() const {
@@ -67,20 +82,20 @@ bool Recognizer::hasModel() const {
     return recognizer != nullptr;
 }
 
-std::vector<Recognizer::Hit> Recognizer::recognize(const QVector<QVector<QPointF>> &strokes,
-                                                   std::uint32_t topK, bool includeKana) const {
+bool Recognizer::hasLanguageModel() const {
     const std::lock_guard<std::mutex> lock(mutex);
-    if (recognizer == nullptr) {
-        return {};
-    }
-    return toHits(recognizer->recognize(toRaw(strokes), topK, includeKana));
+    return recognizer != nullptr && recognizer->has_language_model();
 }
 
-std::vector<Recognizer::Hit> Recognizer::similar(const QVector<QVector<QPointF>> &strokes,
-                                                 const QString &exclude, std::uint32_t topK) const {
-    const std::lock_guard<std::mutex> lock(mutex);
-    if (recognizer == nullptr) {
+std::vector<Recognizer::Hit> Recognizer::recognize(const QVector<QVector<QPointF>> &strokes,
+                                                   std::uint32_t topK) const {
+    std::shared_ptr<recognizer::Recognizer> handle;
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        handle = recognizer;
+    }
+    if (handle == nullptr) {
         return {};
     }
-    return toHits(recognizer->similar(toRaw(strokes), exclude.toStdString(), topK));
+    return toHits(handle->recognize(toRaw(strokes), topK));
 }

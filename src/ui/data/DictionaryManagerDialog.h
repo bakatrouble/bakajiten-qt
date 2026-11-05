@@ -23,14 +23,15 @@ class QVBoxLayout;
 /// Android manager — Required then Optional sections, one row
 /// widget per artifact with its status (saved/latest versions +
 /// sizes), Download/Update and Remove buttons, and its own
-/// progress bar while it downloads. A single row of buttons below
-/// runs the whole required set, all stale files, a manual update
-/// check, or a full cache clear. Nothing downloads without a
-/// click — not even on first run. Names/kokugo are opt-in (never
-/// auto-fetched). Removes ask first (required files have no
-/// Remove button at all). State lives in the DataStore singleton
-/// (this view only renders its snapshots); emits dataChanged
-/// when files land so the views reload.
+/// progress bar while it downloads. The Required section ends
+/// with the Japanese handwriting row (dl.google.com pack, not a
+/// release artifact): same status/action/progress widgets, no
+/// Remove button, bundled into Download required. A single row of buttons below runs the whole
+/// required set, all stale files, a manual update check, or a full cache clear (which also drops
+/// the handwriting pack). Nothing downloads without a click — not even on first run. Names/kokugo
+/// are opt-in (never auto-fetched). Removes ask first (required files have no Remove button at
+/// all). State lives in the DataStore singleton (this view only renders its snapshots); emits
+/// dataChanged when files land so the views reload.
 class DictionaryManagerDialog : public QDialog {
     Q_OBJECT
 public:
@@ -52,6 +53,12 @@ private slots:
     void onDownloadProgress(const QString &file, qint64 received, qint64 total);
     void onDownloadFinished();
     void onDownloadFailed(const QString &reason);
+    void onModelFileFinished(const QString &file);
+    /// Handwriting pack download (same downloader as the release
+    /// artifacts, separate instance so the manifest write stays
+    /// with dict jobs; the row progress bar runs off the same
+    /// snapshot flow).
+    void onHandwritingDownload();
 
 private:
     /// Re-render every row from the DataStore snapshot (+ local
@@ -64,6 +71,11 @@ private:
     QStringList outdatedAll() const;
     /// Start downloading these manifest files.
     void downloadFiles(const QStringList &files);
+    /// Render the Handwriting section row (dl.google.com pack,
+    /// outside the manifest flow above).
+    void renderHandwritingRow();
+    /// True while the snapshot tracks an in-flight transfer for file.
+    bool snapshotBusy(const QString &file) const;
 
     Ui::DictionaryManagerDialog *ui = nullptr;
     QWidget *devForm = nullptr;
@@ -79,4 +91,9 @@ private:
     /// Set when a transfer lands (control flow for the dataChanged
     /// emit — not shared state, so it stays local).
     bool downloadsLanded = false;
+    /// Handwriting pack row (dl.google.com, not a release
+    /// artifact) plus its download thread.
+    DictionaryManagerRow *handwritingRow = nullptr;
+    DataDownloader *modelDownloader = nullptr;
+    bool handwritingLanded = false;
 };

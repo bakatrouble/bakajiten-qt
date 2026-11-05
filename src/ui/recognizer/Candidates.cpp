@@ -30,9 +30,9 @@ void RecognizerWidget::onCandidateClicked(QListWidgetItem *item) {
 
 void RecognizerWidget::updateStatus() {
     if (!modelReady) {
-        return; // loading/missing text already set
+        return; // loading/downloading text already set
     }
-    QString text = tr("%1 templates · %2 stroke(s)").arg(templateCount).arg(strokes.size());
+    QString text = tr("Japanese model · %1 stroke(s)").arg(strokes.size());
     if (matchMs >= 0.0) {
         text += tr(" · %1 ms").arg(matchMs, 0, 'f', 1);
     }

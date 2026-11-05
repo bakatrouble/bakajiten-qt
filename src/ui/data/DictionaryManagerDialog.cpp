@@ -1,6 +1,7 @@
 #include "ui/data/DictionaryManagerDialog.h"
 
 #include "core/data/DataPaths.h"
+#include "core/recognizer/ModelPack.h"
 #include "core/state/DataStore.h"
 #include "dev/UiForm.h"
 #include "ui/data/DataChecker.h"
@@ -9,6 +10,8 @@
 #include "ui_DictionaryManagerDialog.h"
 
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QLabel>
 #include <QMessageBox>
@@ -66,6 +69,21 @@ DictionaryManagerDialog::DictionaryManagerDialog(QWidget *parent) : QDialog(pare
             rowsLayout->addWidget(row);
             rows.insert(file, row);
         }
+        if (title == groups.constFirst().first) {
+            // Handwriting pack under Required: Google's Japanese
+            // model via dl.google.com (not a release artifact, so
+            // no manifest row covers it). Same row widget, same
+            // required semantics — no Remove offered.
+            handwritingRow = new DictionaryManagerRow(this);
+            handwritingRow->setFileName(tr("Japanese handwriting"));
+            handwritingRow->setDataFile(QStringLiteral("handwriting"));
+            handwritingRow->setAction(tr("Download"), false);
+            handwritingRow->setRemoveEnabled(false);
+            connect(handwritingRow, &DictionaryManagerRow::downloadRequested, this,
+                    &DictionaryManagerDialog::onHandwritingDownload);
+            rowsLayout->addWidget(handwritingRow);
+            rows.insert(QStringLiteral("handwriting"), handwritingRow);
+        }
     }
     rowsLayout->addStretch(1);
     auto *buttons = ui->buttonBox;
@@ -88,10 +106,22 @@ DictionaryManagerDialog::DictionaryManagerDialog(QWidget *parent) : QDialog(pare
     connect(downloader, &DataDownloader::progress, this,
             &DictionaryManagerDialog::onDownloadProgress);
     connect(downloader, &DataDownloader::fileFinished, this,
-            [this](const QString &) { downloadsLanded = true; });
+            &DictionaryManagerDialog::onModelFileFinished);
     connect(downloader, &DataDownloader::finished, this,
             &DictionaryManagerDialog::onDownloadFinished);
     connect(downloader, &DataDownloader::failed, this, &DictionaryManagerDialog::onDownloadFailed);
+    // Handwriting packs ride a second instance of the same
+    // downloader (its own queue/progress; dict jobs keep the
+    // manifest write to themselves).
+    modelDownloader = new DataDownloader(this);
+    connect(modelDownloader, &DataDownloader::progress, this,
+            &DictionaryManagerDialog::onDownloadProgress);
+    connect(modelDownloader, &DataDownloader::fileFinished, this,
+            &DictionaryManagerDialog::onModelFileFinished);
+    connect(modelDownloader, &DataDownloader::finished, this,
+            &DictionaryManagerDialog::onDownloadFinished);
+    connect(modelDownloader, &DataDownloader::failed, this,
+            &DictionaryManagerDialog::onDownloadFailed);
     // State lives in the DataStore singleton (last check survives
     // reopening); this view only renders its snapshots.
     DataStore::shared().subscribe(this, [this](const DataStore::Snapshot &) { renderRows(); });
@@ -130,7 +160,35 @@ void DictionaryManagerDialog::onRemoveAction(const QString &file) {
     DataStore::shared().refresh();
 }
 
-void DictionaryManagerDialog::onRequiredAction() { downloadFiles(pendingRequired()); }
+void DictionaryManagerDialog::onHandwritingDownload() {
+    if (snapshotBusy(QStringLiteral("handwriting"))) {
+        return;
+    }
+    renderHandwritingRow();
+    // Same transport as the release artifacts (async, progress in
+    // the row); the model has its own downloader instance so the
+    // manifest write stays with dict jobs.
+    modelDownloader->downloadModel(QStringLiteral("handwriting"), ModelPacks::packs(),
+                                   ModelPacks::rootDir());
+}
+
+void DictionaryManagerDialog::onModelFileFinished(const QString &file) {
+    downloadsLanded = true;
+    if (file == QStringLiteral("handwriting")) {
+        handwritingLanded = true;
+    }
+}
+
+bool DictionaryManagerDialog::snapshotBusy(const QString &file) const {
+    return DataStore::shared().current().busy.contains(file);
+}
+
+void DictionaryManagerDialog::onRequiredAction() {
+    downloadFiles(pendingRequired());
+    if (!ModelPacks::isCached()) {
+        onHandwritingDownload();
+    }
+}
 
 void DictionaryManagerDialog::onUpdateAllAction() { downloadFiles(outdatedAll()); }
 
@@ -143,6 +201,9 @@ void DictionaryManagerDialog::onClearAllAction() {
     for (const QString &file : DataPaths::allFiles()) {
         QFile::remove(DataPaths::filePath(file));
     }
+    // Full reset includes the handwriting pack (re-downloaded from
+    // the dialog like any required file).
+    QDir(ModelPacks::rootDir()).removeRecursively();
     DataStore::shared().refresh();
 }
 
@@ -151,20 +212,32 @@ void DictionaryManagerDialog::onDownloadProgress(const QString &file, qint64 rec
                                                  qint64 total) {
     const DataStore::Snapshot before = DataStore::shared().current();
     DataStore::shared().setProgress(file, received, total);
-    // Transport is the `.gz`: compressed size is the honest total.
+    // Transport is the `.gz`: compressed size is the honest total
+    // (model packs report their catalog zip sizes instead).
     const qint64 known = total > 0                   ? total
                          : before.remote.has_value() ? before.remote->files.value(file).gz
                                                      : 0;
+    const QString label = file == QStringLiteral("handwriting") ? tr("Japanese handwriting")
+                                                                : DataPaths::displayName(file);
     DataStore::shared().setNotice(
-        tr("Downloading %1… %2 / %3")
-            .arg(DataPaths::displayName(file), formatMb(received), formatMb(known)));
+        tr("Downloading %1… %2 / %3").arg(label, formatMb(received), formatMb(known)));
 }
 
 void DictionaryManagerDialog::onDownloadFinished() {
     DataStore::shared().clearBusy();
-    DataStore::shared().setNotice(tr("Dictionaries are up to date."));
+    QStringList notes;
     if (downloadsLanded) {
+        notes << tr("Dictionaries are up to date.");
+    }
+    if (handwritingLanded) {
+        notes << tr("Handwriting model ready.");
+    }
+    if (!notes.isEmpty()) {
+        DataStore::shared().setNotice(notes.join(QStringLiteral(" ")));
+    }
+    if (downloadsLanded || handwritingLanded) {
         downloadsLanded = false;
+        handwritingLanded = false;
         emit dataChanged();
     }
 }
@@ -308,7 +381,7 @@ void DictionaryManagerDialog::renderRows() {
     }
     const QStringList pending = pendingRequired();
     // Nothing on disk: no updates to check for, nothing to clear.
-    bool anyPresent = false;
+    bool anyPresent = ModelPacks::isCached();
     for (const QString &file : DataPaths::allFiles()) {
         if (QFileInfo::exists(DataPaths::filePath(file))) {
             anyPresent = true;
@@ -318,13 +391,17 @@ void DictionaryManagerDialog::renderRows() {
     checkButton->setVisible(anyPresent);
     clearButton->setVisible(anyPresent);
     const bool idle = snapshot.busy.isEmpty();
-    requiredButton->setVisible(remote.has_value() && !pending.isEmpty());
-    if (!remote.has_value() || pending.isEmpty()) {
+    const bool handwritingMissing = !ModelPacks::isCached();
+    requiredButton->setVisible(remote.has_value() && (!pending.isEmpty() || handwritingMissing));
+    if (!remote.has_value() || (pending.isEmpty() && !handwritingMissing)) {
         requiredButton->setEnabled(false);
     } else {
         qint64 total = 0;
         for (const QString &file : pending) {
             total += remote->files.value(file).gz;
+        }
+        if (handwritingMissing) {
+            total += ModelPacks::downloadBytes();
         }
         requiredButton->setText(tr("Download required (%1)").arg(formatMb(total)));
         requiredButton->setEnabled(idle);
@@ -343,4 +420,42 @@ void DictionaryManagerDialog::renderRows() {
     }
     checkButton->setEnabled(idle);
     clearButton->setEnabled(idle);
+    renderHandwritingRow();
+}
+
+void DictionaryManagerDialog::renderHandwritingRow() {
+    if (handwritingRow == nullptr) {
+        return;
+    }
+    const bool cached = ModelPacks::isCached();
+    const bool flying = snapshotBusy(QStringLiteral("handwriting"));
+    if (flying) {
+        handwritingRow->setStatus(tr("Downloading handwriting model…"));
+        handwritingRow->setAction(tr("Downloading…"), false);
+        handwritingRow->setRemoveVisible(false);
+        handwritingRow->setRemoveEnabled(false);
+        return;
+    }
+    if (cached) {
+        qint64 bytes = 0;
+        QDirIterator it(ModelPacks::rootDir(), QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            bytes += QFileInfo(it.next()).size();
+        }
+        handwritingRow->setStatus(tr("Downloaded (%1)").arg(formatMb(bytes)));
+        handwritingRow->setAction(tr("Up to date"), false);
+        // Required model: no individual Remove (like the required
+        // dictionaries — a full reset goes through Clear cached
+        // files below).
+        handwritingRow->setRemoveVisible(false);
+        handwritingRow->setRemoveEnabled(false);
+        return;
+    }
+    QStringList lines;
+    lines << tr("Not downloaded");
+    lines << tr("Japanese model · %1 download").arg(formatMb(ModelPacks::downloadBytes()));
+    handwritingRow->setStatus(lines.join(QStringLiteral("\n")));
+    handwritingRow->setAction(tr("Download (%1)").arg(formatMb(ModelPacks::downloadBytes())), true);
+    handwritingRow->setRemoveVisible(false);
+    handwritingRow->setRemoveEnabled(false);
 }

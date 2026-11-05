@@ -500,48 +500,6 @@ void TestMainWindow::kanjiDialogWordsTab() {
     QCOMPARE(input->text(), heading);
 }
 
-void TestMainWindow::kanjiDialogSimilarStrip() {
-    std::unique_ptr<MainWindow> window(openWindow());
-    QVERIFY2(window != nullptr, "window never exposed");
-    auto *table = window->findChild<DictionaryTable *>("resultsTable");
-    QVERIFY2(table != nullptr, "results table missing or not promoted");
-    auto *input = window->findChild<QLineEdit *>("searchInput");
-    QVERIFY2(input != nullptr, "search input missing");
-    auto *model = table->model();
-    QVERIFY2(model != nullptr, "results model missing");
-    input->setText(QStringLiteral("たべる"));
-    QTest::keyClick(input, Qt::Key_Return);
-    QTRY_VERIFY_WITH_TIMEOUT(model->rowCount() > 0, 30000);
-    const QRect cell = table->visualRect(model->index(0, 0));
-    QVERIFY(!cell.isNull());
-    QTest::mouseDClick(table->viewport(), Qt::LeftButton, Qt::NoModifier,
-                       cell.topLeft() + QPoint(6, cell.height() / 2));
-    auto *dialog = window->findChild<KanjiDialog *>("kanjiDialog");
-    QVERIFY2(dialog != nullptr, "kanji dialog missing");
-    QTRY_VERIFY_WITH_TIMEOUT(dialog->isVisible(), 5000);
-    // Similar is a bottom checkbox row with a candidate strip
-    // (not a tab): unchecked hides the strip, checking fills it
-    // with single kanji.
-    auto *group = dialog->findChild<QCheckBox *>("kanjiSimilarCheck");
-    QVERIFY2(group != nullptr, "similar checkbox missing");
-    auto *strip = dialog->findChild<CandidateList *>("kanjiSimilarStrip");
-    QVERIFY2(strip != nullptr, "similar strip missing");
-    QVERIFY(!strip->isVisible());
-    group->setChecked(true);
-    QTRY_VERIFY_WITH_TIMEOUT(strip->count() > 0, 15000);
-    for (int i = 0; i < strip->count(); ++i) {
-        QCOMPARE(strip->item(i)->text().size(), 1);
-        QVERIFY(strip->item(i)->text() != QStringLiteral("食"));
-    }
-    // Tapping a similar shape retargets the whole dialog.
-    const QString target = strip->item(0)->text();
-    QTest::mouseClick(strip->viewport(), Qt::LeftButton, Qt::NoModifier,
-                      strip->visualRect(strip->model()->index(0, 0)).center());
-    QTRY_VERIFY_WITH_TIMEOUT(dialog->character() == target, 5000);
-    group->setChecked(false);
-    QVERIFY(!strip->isVisible());
-}
-
 void TestMainWindow::kanjiDialogPartsStrip() {
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");
@@ -631,7 +589,7 @@ void TestMainWindow::kanjiDialogPartOfStrip() {
 
 void TestMainWindow::kanjiDialogStripShowsKanjiTip() {
     // Dialog strips carry the kanji hover card (same card as the
-    // table): hovering a similar shape shows its glyph.
+    // table): hovering a part shows its glyph.
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");
     auto *table = window->findChild<DictionaryTable *>("resultsTable");
@@ -640,7 +598,7 @@ void TestMainWindow::kanjiDialogStripShowsKanjiTip() {
     QVERIFY2(input != nullptr, "search input missing");
     auto *model = table->model();
     QVERIFY2(model != nullptr, "results model missing");
-    input->setText(QStringLiteral("たべる"));
+    input->setText(QStringLiteral("亜鉛"));
     QTest::keyClick(input, Qt::Key_Return);
     QTRY_VERIFY_WITH_TIMEOUT(model->rowCount() > 0, 30000);
     const QRect cell = table->visualRect(model->index(0, 0));
@@ -650,20 +608,29 @@ void TestMainWindow::kanjiDialogStripShowsKanjiTip() {
     auto *dialog = window->findChild<KanjiDialog *>("kanjiDialog");
     QVERIFY2(dialog != nullptr, "kanji dialog missing");
     QTRY_VERIFY_WITH_TIMEOUT(dialog->isVisible(), 5000);
-    auto *group = dialog->findChild<QCheckBox *>("kanjiSimilarCheck");
-    QVERIFY2(group != nullptr, "similar checkbox missing");
-    auto *strip = dialog->findChild<CandidateList *>("kanjiSimilarStrip");
-    QVERIFY2(strip != nullptr, "similar strip missing");
+    auto *group = dialog->findChild<QCheckBox *>("kanjiPartsCheck");
+    QVERIFY2(group != nullptr, "parts checkbox missing");
+    auto *strip = dialog->findChild<CandidateList *>("kanjiPartsStrip");
+    QVERIFY2(strip != nullptr, "parts strip missing");
     group->setChecked(true);
     QTRY_VERIFY_WITH_TIMEOUT(strip->count() > 0, 15000);
-    const QString first = strip->item(0)->text();
+    // Hover a real kanji (the first part may be a bare stroke
+    // with no card): same flow as the parts strip test.
+    int ichi = -1;
+    for (int i = 0; i < strip->count(); ++i) {
+        if (strip->item(i)->text() == QStringLiteral("一")) {
+            ichi = i;
+        }
+    }
+    QVERIFY2(ichi >= 0, "一 part missing");
+    const QString first = strip->item(ichi)->text();
     QCOMPARE(first.size(), 1);
     // Hand-built move (deterministic, no buttons involved). Park
     // the real cursor on the cell first: the double-click above
     // parks it over the main table, and its delayed motion events
     // would otherwise race this synthetic hover on the one shared
     // dialog card.
-    const QPoint at = strip->visualRect(strip->model()->index(0, 0)).center();
+    const QPoint at = strip->visualRect(strip->model()->index(ichi, 0)).center();
     QCursor::setPos(strip->viewport()->mapToGlobal(at));
     QMouseEvent hover(QEvent::MouseMove, QPointF(at), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(strip->viewport(), &hover);
@@ -686,7 +653,7 @@ void TestMainWindow::kanjiDialogTogglePreservesMainArea() {
     QVERIFY2(input != nullptr, "search input missing");
     auto *model = table->model();
     QVERIFY2(model != nullptr, "results model missing");
-    input->setText(QStringLiteral("たべる"));
+    input->setText(QStringLiteral("亜鉛"));
     QTest::keyClick(input, Qt::Key_Return);
     QTRY_VERIFY_WITH_TIMEOUT(model->rowCount() > 0, 30000);
     const QRect cell = table->visualRect(model->index(0, 0));
@@ -698,10 +665,10 @@ void TestMainWindow::kanjiDialogTogglePreservesMainArea() {
     QTRY_VERIFY_WITH_TIMEOUT(dialog->isVisible(), 5000);
     auto *tabs = dialog->findChild<QTabWidget *>("kanjiTabs");
     QVERIFY2(tabs != nullptr, "dialog tabs missing");
-    auto *group = dialog->findChild<QCheckBox *>("kanjiSimilarCheck");
-    QVERIFY2(group != nullptr, "similar checkbox missing");
-    auto *strip = dialog->findChild<CandidateList *>("kanjiSimilarStrip");
-    QVERIFY2(strip != nullptr, "similar strip missing");
+    auto *group = dialog->findChild<QCheckBox *>("kanjiPartsCheck");
+    QVERIFY2(group != nullptr, "parts checkbox missing");
+    auto *strip = dialog->findChild<CandidateList *>("kanjiPartsStrip");
+    QVERIFY2(strip != nullptr, "parts strip missing");
     // Prefetched content lands without checking.
     QTRY_VERIFY_WITH_TIMEOUT(strip->count() > 0, 15000);
     group->setChecked(false);
@@ -763,7 +730,7 @@ void TestMainWindow::kanjiStrokePlaybackDrawsPartial() {
 void TestMainWindow::kanjiDialogStripStatePersists() {
     // Checkbox open state persists across dialog instances (same
     // memorized YAML as the panel size): flip, rebuild, restored.
-    // Suite state is shared — all three keys reset on the way out.
+    // Suite state is shared — both keys reset on the way out.
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");
     auto *table = window->findChild<DictionaryTable *>("resultsTable");
@@ -772,7 +739,7 @@ void TestMainWindow::kanjiDialogStripStatePersists() {
     QVERIFY2(input != nullptr, "search input missing");
     auto *model = table->model();
     QVERIFY2(model != nullptr, "results model missing");
-    input->setText(QStringLiteral("たべる"));
+    input->setText(QStringLiteral("亜鉛"));
     QTest::keyClick(input, Qt::Key_Return);
     QTRY_VERIFY_WITH_TIMEOUT(model->rowCount() > 0, 30000);
     const QRect cell = table->visualRect(model->index(0, 0));
@@ -782,24 +749,24 @@ void TestMainWindow::kanjiDialogStripStatePersists() {
     auto *dialog = window->findChild<KanjiDialog *>("kanjiDialog");
     QVERIFY2(dialog != nullptr, "kanji dialog missing");
     QTRY_VERIFY_WITH_TIMEOUT(dialog->isVisible(), 5000);
-    auto *check = dialog->findChild<QCheckBox *>("kanjiSimilarCheck");
-    QVERIFY2(check != nullptr, "similar checkbox missing");
+    auto *check = dialog->findChild<QCheckBox *>("kanjiPartsCheck");
+    QVERIFY2(check != nullptr, "parts checkbox missing");
     check->setChecked(false);
     check->setChecked(true);
     // Value landed in the memorized file.
-    QCOMPARE(MemorizedState::kanjiStripOpen(MemorizedState::KanjiStrip::Similar), true);
+    QCOMPARE(MemorizedState::kanjiStripOpen(MemorizedState::KanjiStrip::Parts), true);
     // A fresh dialog restores it (as across restarts).
     auto *widget = window->findChild<DictionaryWidget *>();
     QVERIFY2(widget != nullptr, "dictionary widget missing");
     auto *dictModel = qobject_cast<DictionaryModel *>(model);
     QVERIFY2(dictModel != nullptr, "main model missing");
     KanjiDialog fresh(widget->kanjiData(), dictModel, window.get());
-    auto *freshCheck = fresh.findChild<QCheckBox *>("kanjiSimilarCheck");
-    QVERIFY2(freshCheck != nullptr, "fresh similar checkbox missing");
+    auto *freshCheck = fresh.findChild<QCheckBox *>("kanjiPartsCheck");
+    QVERIFY2(freshCheck != nullptr, "fresh parts checkbox missing");
     QVERIFY(freshCheck->isChecked());
     // Suite isolation: back to unchecked.
     check->setChecked(false);
-    QCOMPARE(MemorizedState::kanjiStripOpen(MemorizedState::KanjiStrip::Similar), false);
+    QCOMPARE(MemorizedState::kanjiStripOpen(MemorizedState::KanjiStrip::Parts), false);
 }
 
 void TestMainWindow::kanjiDialogRetargetShowsInfo() {

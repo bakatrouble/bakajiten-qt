@@ -12,10 +12,13 @@ noted; `OBJECT` = `objectName` used with `findChild`.
 ## 1. Principles
 
 - **C++ owns windows, Rust owns matching.** Two Rust crates expose
-  a UniFFI boundary: `librecognizer` (stroke matcher + template
-  bank) and `libdict` (dictionary storage + lookup, deinflection,
+  a UniFFI boundary: `librecognizer` (mlkit-ink decode of
+  caller-supplied bytes — it never downloads) and `libdict`
+  (dictionary storage + lookup, deinflection,
   kana/romaji/furigana helpers). C++ never implements matching or
-  search ranking; Rust never touches widgets.
+  search ranking; Rust never touches widgets. The handwriting
+  model itself downloads through C++ (`ModelPack` table +
+  `DataDownloader`, see §7).
 - **Batch bridge.** Strokes cross per `recognize` call as nested
   vectors; nothing list-shaped accumulates incrementally.
 - **One dictionary at a time.** Scope combo selects
@@ -52,7 +55,7 @@ noted; `OBJECT` = `objectName` used with `findChild`.
    recreates the window in-process.
 
 Environment overrides: `BAKAJITEN_SETTINGS` (settings file path),
-`BAKAJITEN_DATA_DIR` (data dir), `MODEL` (template bank path),
+`BAKAJITEN_DATA_DIR` (data dir), `MODEL` (handwriting model dir),
 `BAKAJITEN_UPDATE_ARTIFACT` (empty disables update checks),
 `$UI_DIR` (dev `.ui` lookup).
 
@@ -134,9 +137,13 @@ Debug builds, OFF otherwise.
 
 - `DataPaths` — data lives in the directory holding
   `settings.yaml` (`BAKAJITEN_DATA_DIR` overrides outright).
-  `requiredFiles = [jmdict.bin, kanji.bin, templates.bin]`
+  `requiredFiles = [jmdict.bin, kanji.bin]`
   (missing → first-run Dictionaries dialog),
-  `optionalFiles = [jmnedict.bin, kokugo.bin]`.
+  `optionalFiles = [jmnedict.bin, kokugo.bin]`. The handwriting
+  model is required too but lives outside the manifest flow: the
+  dialog's Handwriting section downloads the Japanese pack from
+  `dl.google.com` (see §7), and startup opens the dialog while it
+  is missing — same as a missing required file.
 - `DataSource` — release `.bin.gz` URLs on the `bakajiten-data`
   repo (`manifest.json` + per-file `name.gz`).
 - `DataManifestReader` — parses `manifest.json`
@@ -149,7 +156,10 @@ Debug builds, OFF otherwise.
   threads): check manifest → per-file rows (Missing/Outdated/
   Current + Download/Update/disabled); download streams to
   `.gz.part`, gunzips, sha256-verifies, atomically renames;
-  progress 0–1000; required files batch under one button.
+  progress 0–1000; required files batch under one button. The
+  handwriting pack rides a second downloader instance under the
+  `handwriting` key: dl.google.com zips, sha1-verified, unzipped
+  via `util/Archive`, one pack at a time with cumulative progress.
 - `DataDialog` (code-built, modeless, `WA_DeleteOnClose`):
   rows per file (name + status + action), progress bar hidden
   unless downloading (retained size, no relayout), `dataChanged`
@@ -186,8 +196,8 @@ Debug builds, OFF otherwise.
 shared lock then run lock-free: `searchIndices`,
 `searchMeaningIndices`, `entryAt`, `searchMiddle` (Words tab),
 `lookupKanji`, `kanjiStrokes` (pen space 0–255),
-`kanjiContaining` (kradfile order), `similarKanji` (excludes
-self). Errors become `false`/empty; never unwind.
+`kanjiContaining` (kradfile order). Errors become `false`/empty;
+never unwind.
 
 ### `DictWorker` + `DictionaryModel` (`QAbstractTableModel`, 3 cols)
 
@@ -209,24 +219,32 @@ self). Errors become `false`/empty; never unwind.
 - `MeaningBuilder` turns senses into paint runs (`Infl/Number/
   Pos/Misc/Uk/Gloss/Field/Gap`) with shared elision math;
   `KanjiInfo` serves kanji cards, strokes, parts/part-of,
-  similarity (via the recognizer, excluding self), and all
-  kanjidic detail fields.
+  and all kanjidic detail fields.
 
 ## 7. Recognizer (`librecognizer` + `src/core/recognizer/`)
 
-Classical two-stage matcher (zkanji lineage): per-stroke segment-
-angle DTW + 16-bit relative-position layout, fused per candidate
-(greedy stroke assignment, ±1 order window, ±2 layout neighbors,
-±5% size prior, missing-stroke fines). Trajectory-native, pen
-space 0–255 (`u8`); KanjiVG sources scaled at parse; full-bank
-match ~8 ms. Bank builds deterministically (rayon map + ordered
-sort ⇒ bit-identical at any thread count).
+tegaki's pure-Rust engine, owned here (`lib/librecognizer`,
+ported from `google-recog`): preprocessing, Bézier features,
+5x144 BiLSTM, CTC prefix beam search with character-class
+scores. The `ja` sources (recospec + script net) download from
+`dl.google.com` through the Dictionaries dialog (~3 MB into
+`<data>/mlkit-ink`, sha1-verified, unzipped, converted once into
+`network.safetensors` — net plus vocab in the header metadata —
+installed atomically by `DataDownloader` + `ModelPack`) and the
+panel decodes offline afterwards; `MODEL` overrides the model
+dir. The panel itself never downloads. No word-level language
+model (the compact FST is a proprietary format unreadable
+outside the SDK); the beam runs pruned (top-64 classes/frame,
+width 8) and the greedy best path answers first.
 
 C++ side: `Recognizer` (thin wrapper over generated bindings;
-`loadModel` reads the file, strokes cross per call as nested
-vectors, hits return best-first with fused distances) and
-`RecognizerWorker` on a dedicated match thread with a generation
-counter (stale replies dropped). `MODEL` overrides the bank path.
+loads the converted bundle, strokes cross per call as nested
+vectors, hits return best-first text + score; the beam follows
+the request with an 8-wide floor and `RecognizerWorker` on a
+dedicated match
+thread with a generation counter (stale replies dropped).
+No shape similarity: the kanji dialog's Similar strip is retired
+(Parts/Part-of remain).
 
 ## 8. Dictionary UI (`src/ui/dictionary/`)
 
@@ -321,9 +339,9 @@ button.
   numbered badges with compass-ring placement, 1–10 speed,
   frame-advance off the screen rate), detail runs (meanings,
   readings, grade/JLPT/frequency, radicals, codes), words tab
-  (own `DictionaryModel` + shared delegate), similar/parts/
-  part-of strips (worker + generation guard, retarget on
-  click). State persists per strip.
+  (own `DictionaryModel` + shared delegate), parts/part-of
+  strips (worker + generation guard, retarget on click). State
+  persists per strip.
 - `KanjiHover`: one shared card per top-level window; resolves
   the kanji under the cursor in table / article / candidate
   strip (viewport-coord hit-testing, offscreen-safe), re-hits
@@ -412,7 +430,7 @@ next F5. Release builds never touch UiTools.
 ## 19. Replication checklist
 
 1. UniFFI: generate C++ bindings at build time from the
-   cdylibs (never check them in); thin wrappers own the bank
+   cdylibs (never check them in); thin wrappers own the model
    handles behind mutexes; workers on dedicated threads with
    generation counters.
 2. Data first: manifest + `.bin.gz` download with sha256 +

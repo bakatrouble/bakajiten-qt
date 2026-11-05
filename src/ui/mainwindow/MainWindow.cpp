@@ -12,6 +12,8 @@
 #include <QTimer>
 
 #include "core/data/DataPaths.h"
+#include "core/recognizer/ModelPack.h"
+#include "core/recognizer/Recognizer.h"
 #include "core/settings/MemorizedState.h"
 #include "core/settings/Settings.h"
 #include "core/state/SettingsStore.h"
@@ -200,6 +202,12 @@ void MainWindow::checkData() {
             openDictionaries();
             return;
         }
+    }
+    // The handwriting pack is required too (panel and kanji
+    // hover cards need it); the dialog is its only download
+    // surface.
+    if (!ModelPacks::isCached()) {
+        openDictionaries();
     }
 }
 

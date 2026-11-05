@@ -153,21 +153,3 @@ std::vector<std::string> DictStore::kanjiContaining(const std::string &part) {
     }
     return handle->containing(part);
 }
-
-std::vector<Recognizer::Hit> DictStore::similarKanji(const QString &ch, std::uint32_t topK) {
-    // Strokes from the kanji artifact (pen space already), matched
-    // through the shared recognizer bank — one bank for the panel
-    // matcher and the similar strip alike, no libdict copy.
-    QVector<QVector<QPointF>> strokes;
-    for (const dict::KanjiStroke &stroke : kanjiStrokes(ch.toStdString())) {
-        QVector<QPointF> points;
-        for (const dict::KanjiPoint &p : stroke.points) {
-            points << QPointF(p.x, p.y);
-        }
-        strokes << points;
-    }
-    if (strokes.isEmpty()) {
-        return {};
-    }
-    return Recognizer::shared().similar(strokes, ch, topK);
-}

@@ -10,8 +10,6 @@ QSettings stateFile() { return QSettings(AppSettings::memorizedPath(), yamlForma
 
 QString kanjiKey(MemorizedState::KanjiStrip strip) {
     switch (strip) {
-    case MemorizedState::KanjiStrip::Similar:
-        return QStringLiteral("kanji/similarOpen");
     case MemorizedState::KanjiStrip::Parts:
         return QStringLiteral("kanji/partsOpen");
     case MemorizedState::KanjiStrip::PartOf:

@@ -6,6 +6,7 @@
 
 #include "widgets/canvas/CanvasWidget.h"
 #include "widgets/list/CandidateList.h"
+#include "widgets/list/RecognizerCandidateList.h"
 #include "widgets/table/DictionaryTable.h"
 #include "widgets/text/ArticleView.h"
 
@@ -36,6 +37,11 @@ public:
         }
         if (className == QLatin1String("CandidateList")) {
             auto *w = new CandidateList(parent);
+            w->setObjectName(name);
+            return w;
+        }
+        if (className == QLatin1String("RecognizerCandidateList")) {
+            auto *w = new RecognizerCandidateList(parent);
             w->setObjectName(name);
             return w;
         }

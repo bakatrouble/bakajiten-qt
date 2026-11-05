@@ -1,12 +1,9 @@
 #pragma once
 
-#include "core/recognizer/Recognizer.h"
 #include "core/settings/MemorizedState.h"
 
 #include <QDialog>
 #include <QString>
-
-#include <vector>
 
 namespace Ui {
 class KanjiDialog;
@@ -23,16 +20,15 @@ class QLabel;
 class QPushButton;
 class QCheckBox;
 class QTabWidget;
-class RecognizerWorker;
 class DictionaryTable;
 class RunLabel;
 
 /// Kanji information dialog (see the zkanji mock): two tabs — Info
 /// (S.O.D. stroke-order diagram plus readings/meanings and code
 /// details) and Words (the main dictionary table over entries
-/// containing the character) — plus Similar/Parts/Part-of checkbox
-/// rows at the bottom (each heading toggles its candidate-list
-/// strip; picking a character retargets the dialog).
+/// containing the character) — plus Parts/Part-of checkbox rows at
+/// the bottom (each heading toggles its candidate-list strip;
+/// picking a character retargets the dialog).
 /// Modeless (test- and workflow-friendly): the owner creates one
 /// and drives it with `setCharacter`.
 class KanjiDialog : public QDialog {
@@ -65,9 +61,6 @@ protected:
 private slots:
     // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     void onStrokeProgress(int shown, int total);
-    /// Similar shapes answered: fill the strip (stale
-    /// generations drop; empty unchecks the heading).
-    void onSimilarLoaded(const std::vector<Recognizer::Hit> &hits, quint64 generation);
     /// kradfile parts answered: same pattern.
     void onPartsLoaded(const QStringList &parts, quint64 generation);
     /// Part-of list answered: same pattern.
@@ -104,9 +97,6 @@ private:
     QString currentChar;
     /// Load generation (retargets mid-flight answer stale).
     quint64 loadGeneration = 0;
-    /// Similar-match worker, hosted on the model's dict thread
-    /// (see `DictionaryModel::workerThread`).
-    RecognizerWorker *similarWorker = nullptr;
     QTabWidget *tabs = nullptr;
     QWidget *wordsTab = nullptr;
     DictionaryTable *wordsTable = nullptr;
@@ -114,8 +104,6 @@ private:
     /// the main list, Middle mode over the dialog character).
     DictionaryModel *wordsModel = nullptr;
     DictionaryTableDelegate *wordsDelegate = nullptr;
-    QCheckBox *similarCheck = nullptr;
-    CandidateList *similarStrip = nullptr;
     QCheckBox *partsCheck = nullptr;
     CandidateList *partsStrip = nullptr;
     QCheckBox *partOfCheck = nullptr;

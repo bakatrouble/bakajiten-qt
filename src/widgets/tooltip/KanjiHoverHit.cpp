@@ -7,8 +7,11 @@
 #include "widgets/text/RunLabel.h"
 
 #include <QAbstractScrollArea>
+#include <QFontMetrics>
 #include <QListWidgetItem>
 #include <QWidget>
+
+#include "util/CellText.h"
 
 void KanjiHover::remember(QWidget *target, const QPoint &local) {
     // Viewport-anchored: labels glide with the scroll, so the
@@ -82,7 +85,29 @@ QString KanjiHover::kanjiAt(QObject *watched, const QPoint &local) const {
                 return {};
             }
             const QListWidgetItem *item = strip->itemAt(local);
-            return item != nullptr ? item->text() : QString();
+            if (item == nullptr) {
+                return {};
+            }
+            // One card per glyph: resolve the character under the
+            // cursor, not the whole candidate (multi-character ink
+            // candidates otherwise never match a single-kanji
+            // card). Cells center their text (see the candidate
+            // delegate paint), so measure from the centered left.
+            const QString text = item->text();
+            const QRect cell = strip->visualItemRect(item);
+            const QFontMetrics metrics(strip->font());
+            const QString visible = metrics.elidedText(text, Qt::ElideRight, cell.width());
+            const int textLeft =
+                cell.left() + (cell.width() - metrics.horizontalAdvance(visible)) / 2;
+            const int off = CellText::indexAtX(metrics, visible, local.x() - textLeft);
+            if (off < 0 || off >= visible.size()) {
+                return {};
+            }
+            const QChar c = visible.at(off);
+            if (c.isHighSurrogate() && off + 1 < visible.size()) {
+                return visible.mid(off, 2);
+            }
+            return QString(c);
         }
     }
     return {};

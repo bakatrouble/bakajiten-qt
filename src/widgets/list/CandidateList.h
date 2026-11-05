@@ -30,9 +30,9 @@ public:
     /// Replace all cells (empty = placeholder row, no scores).
     void setHits(const QVector<CandidateHit> &hits);
     /// Rows follow the interface font (runs on build + FontChange).
-    void refreshScale();
+    virtual void refreshScale();
     /// Square cells fitted to the live viewport (post-layout only).
-    void refreshGrid();
+    virtual void refreshGrid();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "core/recognizer/Recognizer.h"
 #include "dict.hpp"
 
 #include <QString>
@@ -55,11 +54,6 @@ public:
     std::vector<dict::KanjiStroke> kanjiStrokes(const std::string &character);
     /// Characters using `part` (kradfile order).
     std::vector<std::string> kanjiContaining(const std::string &part);
-    /// Shape-similar kanji for one character: strokes from the
-    /// kanji artifact, matched through the shared recognizer bank
-    /// (panel matcher and similar strip share it), the character
-    /// itself dropped, at most `topK` shown.
-    std::vector<Recognizer::Hit> similarKanji(const QString &ch, std::uint32_t topK);
 
 private:
     DictStore() = default;
