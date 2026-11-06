@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QDialog>
+#include <QFutureWatcher>
 #include <QMap>
 #include <QString>
 
 #include <optional>
 
 #include "core/data/DataManifest.h"
+#include "core/state/DataStore.h"
 
 namespace Ui {
 class DictionaryManagerDialog;
@@ -18,6 +20,16 @@ class DictionaryManagerRow;
 class QLabel;
 class QPushButton;
 class QVBoxLayout;
+
+/// One hashing pass over the release artifacts (worker thread):
+/// per-file freshness against a remote manifest.
+struct FileStatusResult {
+    quint64 epoch = 0;
+    /// Cache key the pass was computed for (remote manifest +
+    /// on-disk stats); landings for a stale key are dropped.
+    QString key;
+    QMap<QString, DataFileStatus> statuses;
+};
 
 /// Dictionaries dialog (Help menu): a scrollable list like the
 /// Android manager — Required then Optional sections, one row
@@ -54,6 +66,9 @@ private slots:
     void onDownloadFinished();
     void onDownloadFailed(const QString &reason);
     void onModelFileFinished(const QString &file);
+    /// Hashing-pass worker landed: adopt its statuses (unless
+    /// superseded) and repaint.
+    void onStatusesDone(QFutureWatcher<FileStatusResult> *watcher);
     /// Handwriting pack download (same downloader as the release
     /// artifacts, separate instance so the manifest write stays
     /// with dict jobs; the row progress bar runs off the same
@@ -62,12 +77,17 @@ private slots:
 
 private:
     /// Re-render every row from the DataStore snapshot (+ local
-    /// disk); runs on every store emission. Buttons stay put:
-    /// only text, visibility, and enabled change.
+    /// disk); runs on every store emission. File freshness comes
+    /// from a cached hashing pass (see below) — never hashed
+    /// inline, so progress ticks and dialog opens never stall.
+    /// Buttons stay put: only text, visibility, and enabled change.
     void renderRows();
-    /// Required files that are not current (missing or outdated).
+    /// Required files that are not current (missing or outdated),
+    /// read off the cached hashing pass (empty until the first
+    /// pass lands; the download buttons stay disabled meanwhile).
     QStringList pendingRequired() const;
-    /// Present-but-stale files (required or opt-in) for Update all.
+    /// Present-but-stale files (required or opt-in) for Update all,
+    /// same cache rules as pendingRequired().
     QStringList outdatedAll() const;
     /// Start downloading these manifest files.
     void downloadFiles(const QStringList &files);
@@ -76,6 +96,23 @@ private:
     void renderHandwritingRow();
     /// True while the snapshot tracks an in-flight transfer for file.
     bool snapshotBusy(const QString &file) const;
+    /// Cache key for the hashing pass: remote manifest bytes plus
+    /// per-file on-disk stats (cheap). A pass runs only when the
+    /// key moved (new remote manifest, landed/removed files).
+    QString statusKeyFor(const DataStore::Snapshot &snapshot) const;
+    /// Launch a hashing pass when the key moved (worker thread;
+    /// landing repaints).
+    void refreshStatuses(const DataStore::Snapshot &snapshot, const QString &key);
+    /// Launch a hashing pass when the key moved (worker thread;
+    /// landing repaints).
+    void refreshStatuses(const DataStore::Snapshot &snapshot);
+    /// Last hashing pass (worker thread) and the key it computed.
+    /// Statuses paint rows; actions stay disabled until the first
+    /// pass lands.
+    QMap<QString, DataFileStatus> fileStatuses;
+    bool statusesReady = false;
+    QString statusKey;
+    quint64 statusEpoch = 0;
 
     Ui::DictionaryManagerDialog *ui = nullptr;
     QWidget *devForm = nullptr;

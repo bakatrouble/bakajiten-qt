@@ -8,12 +8,17 @@
 #include "ui/data/DataLog.h"
 #include "util/Archive.h"
 
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QFutureWatcher>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QtConcurrent>
+
+#include <utility>
 
 DataDownloader::DataDownloader(QObject *parent) : QObject(parent) {
     network = new QNetworkAccessManager(this);
@@ -55,6 +60,7 @@ void DataDownloader::downloadModel(const QString &key, const std::vector<ModelPa
 
 void DataDownloader::cancel() {
     aborting = true;
+    ++epoch; // in-flight worker landings from the old job drop.
     queue.clear();
     // Aborts land in onReplyFinished, which only cleans up while
     // `aborting` holds (never reports mid-teardown).
@@ -168,7 +174,9 @@ void DataDownloader::onReplyFinished() {
             failAll(failure);
             return;
         }
-        finishModelOne(partPath);
+        // Install (sha1, unzip, writes) runs in a worker; landing
+        // promotes the zip and advances the pack chain.
+        launchModelInstall(partPath, /*promote=*/true);
         return;
     }
     if (!ok) {
@@ -184,36 +192,93 @@ void DataDownloader::onReplyFinished() {
         failAll(tr("Cannot read %1").arg(partPath));
         return;
     }
-    const std::optional<QByteArray> plain = Gzip::unpack(gz.readAll());
     gz.close();
-    QFile::remove(partPath);
+    // Heavy lifting (full-file gunzip, hash, write) leaves the GUI
+    // thread: the worker reports back through onDictFinish.
+    launchDictFinish(t.file, partPath);
+}
+
+/// tr() equivalent for worker threads (same "DataDownloader"
+/// translation context; QObject::tr needs an instance).
+QString ddTr(const char *source) { return QCoreApplication::translate("DataDownloader", source); }
+
+// Worker-thread pack/convert steps (defined below, used above).
+bool installModelPack(const QString &rootDir, const ModelPacks::Pack &pack,
+                      const QByteArray &zipBytes, QString &reason);
+bool ensureConverted(const QString &rootDir, QString &reason);
+DictFinishResult finishDictFile(const DictFinishInput &in);
+ModelStepResult installModelZip(const ModelInstallInput &in);
+ModelStepResult convertModelStep(const QString &rootDir, quint64 id);
+DictFinishResult finishDictFile(const DictFinishInput &in) {
+    DictFinishResult result;
+    result.file = in.file;
+    result.epoch = in.epoch;
+    QFile gz(in.gzPart);
+    if (!gz.open(QIODevice::ReadOnly)) {
+        result.reason = ddTr("Cannot read %1").arg(in.gzPart);
+        return result;
+    }
+    const QByteArray raw = gz.readAll();
+    gz.close();
+    QFile::remove(in.gzPart);
+    const std::optional<QByteArray> plain = Gzip::unpack(raw);
     if (!plain.has_value()) {
-        qCWarning(dataLog) << "could not unpack" << t.file;
-        failAll(tr("Could not unpack %1").arg(t.file));
-        return;
+        result.reason = ddTr("Could not unpack %1").arg(in.file);
+        return result;
     }
     // Hash-before-rename: a truncated asset never lands in place.
-    if (DataManifestReader::sha256Of(*plain) != remote.files.value(t.file).sha256) {
-        qCWarning(dataLog) << "checksum mismatch for" << t.file;
-        failAll(tr("Checksum mismatch for %1").arg(t.file));
-        return;
+    if (DataManifestReader::sha256Of(*plain) != in.sha) {
+        result.reason = ddTr("Checksum mismatch for %1").arg(in.file);
+        return result;
     }
-    const QString binPart = DataPaths::filePath(t.file) + QStringLiteral(".part");
-    QFile out(binPart);
+    QFile out(in.binPart);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
         out.write(*plain) != plain->size()) {
-        QFile::remove(binPart);
-        failAll(tr("Cannot write %1").arg(binPart));
-        return;
+        QFile::remove(in.binPart);
+        result.reason = ddTr("Cannot write %1").arg(in.binPart);
+        return result;
     }
     out.close();
-    const QString finalPath = DataPaths::filePath(t.file);
-    QFile::remove(finalPath);
-    if (!QFile::rename(binPart, finalPath)) {
-        failAll(tr("Cannot move %1 into place").arg(t.file));
+    QFile::remove(in.finalPath);
+    if (!QFile::rename(in.binPart, in.finalPath)) {
+        result.reason = ddTr("Cannot move %1 into place").arg(in.file);
+        return result;
+    }
+    result.ok = true;
+    return result;
+}
+
+void DataDownloader::launchDictFinish(const QString &file, const QString &gzPart) {
+    DictFinishInput in;
+    in.file = file;
+    in.gzPart = gzPart;
+    in.sha = remote.files.value(file).sha256;
+    in.binPart = DataPaths::filePath(file) + QStringLiteral(".part");
+    in.finalPath = DataPaths::filePath(file);
+    in.epoch = epoch;
+    ++finishing;
+    auto *watcher = new QFutureWatcher<DictFinishResult>(this);
+    connect(watcher, &QFutureWatcher<DictFinishResult>::finished, this,
+            [this, watcher]() { onDictFinish(watcher); });
+    watcher->setFuture(QtConcurrent::run([in]() { return finishDictFile(in); }));
+}
+
+void DataDownloader::onDictFinish(QFutureWatcher<DictFinishResult> *watcher) {
+    const DictFinishResult result = watcher->result();
+    watcher->deleteLater();
+    --finishing;
+    if (result.epoch != epoch || aborting) {
+        // Dead job (a later download()/downloadModel()/cancel()
+        // superseded it): drop silently. The current job's own
+        // landings drive pump/maybeFinish; this one must not emit
+        // finished() for a cancelled run.
         return;
     }
-    emit fileFinished(t.file);
+    if (!result.ok) {
+        failAll(result.reason);
+        return;
+    }
+    emit fileFinished(result.file);
     pump();
 }
 
@@ -253,7 +318,7 @@ void DataDownloader::failAll(const QString &reason) {
 }
 
 void DataDownloader::maybeFinish() {
-    if (!queue.isEmpty() || !active.isEmpty() || aborting) {
+    if (!queue.isEmpty() || !active.isEmpty() || finishing != 0 || aborting) {
         return;
     }
     // Dict jobs refresh the on-disk manifest; model jobs have
@@ -306,33 +371,17 @@ void DataDownloader::startModelOne() {
         bool ok = false;
         if (QFileInfo(zipped).size() == pack.zipSize &&
             modelSha1(zipped, ok) == QString::fromLatin1(pack.sha1Hex) && ok) {
-            QFile cached(zipped);
-            if (!cached.open(QIODevice::ReadOnly)) {
-                failAll(tr("Cannot read %1").arg(zipped));
-                return;
-            }
-            QString reason;
-            if (!installModelPack(pack, cached.readAll(), reason)) {
-                failAll(reason);
-                return;
-            }
-            modelBase += pack.zipSize;
-            ++modelIndex;
-            continue;
+            // Valid cached zip: install runs in a worker (unzip +
+            // disk writes off the GUI thread).
+            launchModelInstall(zipped, /*promote=*/false);
+            return;
         }
         break;
     }
     if (modelIndex >= modelPacks.size()) {
         // Every source landed: convert once into the runtime
-        // bundle before reporting (a cache hit on the sources
-        // still funnels through here).
-        QString reason;
-        if (!ensureConverted(reason)) {
-            failAll(reason);
-            return;
-        }
-        emit fileFinished(modelKey);
-        maybeFinish();
+        // bundle (a worker: reads + Rust conversion + write).
+        launchModelConvert();
         return;
     }
     const ModelPacks::Pack &pack = modelPacks[modelIndex];
@@ -356,40 +405,101 @@ void DataDownloader::startModelOne() {
     active.push_back(Transfer{modelKey, reply, output, 0});
 }
 
-void DataDownloader::finishModelOne(const QString &zipPart) {
-    // Read back through QFile (the stream already closed it).
-    QFile part(zipPart);
-    if (!part.open(QIODevice::ReadOnly)) {
-        QFile::remove(zipPart);
-        failAll(tr("Cannot read %1").arg(zipPart));
+void DataDownloader::launchModelInstall(const QString &zipSource, bool promote) {
+    // The stream already closed the `.part`: install (sha1, unzip,
+    // disk writes) runs in a worker; landing promotes and advances.
+    ModelInstallInput in;
+    in.rootDir = modelRoot;
+    in.pack = modelPacks[modelIndex];
+    in.zipSource = zipSource;
+    in.epoch = epoch;
+    ++finishing;
+    auto *watcher = new QFutureWatcher<ModelStepResult>(this);
+    watcher->setProperty("convert", false);
+    watcher->setProperty("promote", promote);
+    connect(watcher, &QFutureWatcher<ModelStepResult>::finished, this,
+            [this, watcher]() { onModelStepDone(watcher); });
+    watcher->setFuture(QtConcurrent::run([in]() { return installModelZip(in); }));
+}
+
+void DataDownloader::launchModelConvert() {
+    const QString root = modelRoot;
+    const quint64 id = epoch;
+    ++finishing;
+    auto *watcher = new QFutureWatcher<ModelStepResult>(this);
+    watcher->setProperty("convert", true);
+    connect(watcher, &QFutureWatcher<ModelStepResult>::finished, this,
+            [this, watcher]() { onModelStepDone(watcher); });
+    watcher->setFuture(QtConcurrent::run([root, id]() { return convertModelStep(root, id); }));
+}
+
+void DataDownloader::onModelStepDone(QFutureWatcher<ModelStepResult> *watcher) {
+    const bool convert = watcher->property("convert").toBool();
+    const bool promote = watcher->property("promote").toBool();
+    const ModelStepResult result = watcher->result();
+    watcher->deleteLater();
+    --finishing;
+    if (result.epoch != epoch || aborting) {
+        // Dead job: drop silently (same rule as dict landings).
+        // A promoted `.part` may be left behind; the next run's
+        // skip checks only trust verified sizes, so it is inert.
         return;
     }
-    const QByteArray bytes = part.readAll();
-    part.close();
+    if (!result.ok) {
+        if (promote) {
+            QFile::remove(result.zipPart);
+        }
+        failAll(result.reason);
+        return;
+    }
+    if (convert) {
+        emit fileFinished(modelKey);
+        maybeFinish();
+        return;
+    }
     const ModelPacks::Pack &pack = modelPacks[modelIndex];
-    QString reason;
-    if (!installModelPack(pack, bytes, reason)) {
-        QFile::remove(zipPart);
-        failAll(reason);
-        return;
-    }
-    // Keep the verified zip: later runs skip the download.
-    QFile::remove(ModelPacks::zipPath(modelRoot, pack));
-    if (!QFile::rename(zipPart, ModelPacks::zipPath(modelRoot, pack))) {
-        QFile::remove(zipPart);
-        failAll(tr("Cannot cache %1").arg(QString::fromLatin1(pack.pack)));
-        return;
+    if (promote) {
+        // Keep the verified zip: later runs skip the download.
+        QFile::remove(ModelPacks::zipPath(modelRoot, pack));
+        if (!QFile::rename(result.zipPart, ModelPacks::zipPath(modelRoot, pack))) {
+            QFile::remove(result.zipPart);
+            failAll(tr("Cannot cache %1").arg(QString::fromLatin1(pack.pack)));
+            return;
+        }
     }
     modelBase += pack.zipSize;
     ++modelIndex;
     startModelOne();
 }
 
-bool DataDownloader::installModelPack(const ModelPacks::Pack &pack, const QByteArray &zipBytes,
-                                      QString &reason) {
+/// Install one pack from a zip on disk (sha1, single-member pick,
+/// size check, atomic rename). Worker thread: inputs and locals
+/// only — no member access, no signals.
+ModelStepResult installModelZip(const ModelInstallInput &in) {
+    ModelStepResult result;
+    result.zipPart = in.zipSource;
+    result.epoch = in.epoch;
+    QFile zipped(in.zipSource);
+    if (!zipped.open(QIODevice::ReadOnly)) {
+        result.reason = ddTr("Cannot read %1").arg(in.zipSource);
+        return result;
+    }
+    const QByteArray zipBytes = zipped.readAll();
+    zipped.close();
+    QString reason;
+    if (!installModelPack(in.rootDir, in.pack, zipBytes, reason)) {
+        result.reason = std::move(reason);
+        return result;
+    }
+    result.ok = true;
+    return result;
+}
+
+bool installModelPack(const QString &rootDir, const ModelPacks::Pack &pack,
+                      const QByteArray &zipBytes, QString &reason) {
     if (QCryptographicHash::hash(zipBytes, QCryptographicHash::Sha1).toHex() !=
         QByteArray(pack.sha1Hex)) {
-        reason = tr("Checksum mismatch for %1").arg(QString::fromLatin1(pack.pack));
+        reason = ddTr("Checksum mismatch for %1").arg(QString::fromLatin1(pack.pack));
         return false;
     }
     QVector<Archive::Entry> entries;
@@ -402,33 +512,33 @@ bool DataDownloader::installModelPack(const ModelPacks::Pack &pack, const QByteA
         if (!entry.symlink && entry.path.endsWith(suffix)) {
             if (wanted != nullptr) {
                 reason =
-                    tr("More than one wanted member in %1").arg(QString::fromLatin1(pack.pack));
+                    ddTr("More than one wanted member in %1").arg(QString::fromLatin1(pack.pack));
                 return false;
             }
             wanted = &entry;
         }
     }
     if (wanted == nullptr) {
-        reason = tr("No *%1 member in %2").arg(suffix, QString::fromLatin1(pack.pack));
+        reason = ddTr("No *%1 member in %2").arg(suffix, QString::fromLatin1(pack.pack));
         return false;
     }
     if (wanted->data.size() != pack.artifactSize) {
-        reason = tr("Member size mismatch in %1").arg(QString::fromLatin1(pack.pack));
+        reason = ddTr("Member size mismatch in %1").arg(QString::fromLatin1(pack.pack));
         return false;
     }
-    const QString dest = ModelPacks::artifactPath(modelRoot, pack);
+    const QString dest = ModelPacks::artifactPath(rootDir, pack);
     const QString tmp = dest + QStringLiteral(".part");
     QFile out(tmp);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate) ||
         out.write(wanted->data) != wanted->data.size()) {
         QFile::remove(tmp);
-        reason = tr("Cannot write %1").arg(dest);
+        reason = ddTr("Cannot write %1").arg(dest);
         return false;
     }
     out.close();
     QFile::remove(dest);
     if (!QFile::rename(tmp, dest)) {
-        reason = tr("Cannot move %1 into place").arg(dest);
+        reason = ddTr("Cannot move %1 into place").arg(dest);
         return false;
     }
     return true;
@@ -454,18 +564,21 @@ bool writeAtomic(const QString &dest, const std::vector<std::uint8_t> &bytes, QS
     return true;
 }
 
-bool DataDownloader::ensureConverted(QString &reason) {
-    const QString net = ModelPacks::safetensorsPath(modelRoot);
+/// Convert the installed sources into the runtime bundle
+/// (`network.safetensors`); drops the obsolete word-LM artifacts.
+/// Worker thread: inputs and locals only — no member access.
+bool ensureConverted(const QString &rootDir, QString &reason) {
+    const QString net = ModelPacks::safetensorsPath(rootDir);
     if (QFileInfo(net).size() == ModelPacks::safetensorsSize()) {
         return true;
     }
     // Sources are installed (every pack landed above): convert
     // once into the bundle the recognizer loads.
     const std::vector<ModelPacks::Pack> packs = ModelPacks::packs();
-    QFile recospecFile(ModelPacks::artifactPath(modelRoot, packs[0]));
-    QFile tfliteFile(ModelPacks::artifactPath(modelRoot, packs[1]));
+    QFile recospecFile(ModelPacks::artifactPath(rootDir, packs[0]));
+    QFile tfliteFile(ModelPacks::artifactPath(rootDir, packs[1]));
     if (!recospecFile.open(QIODevice::ReadOnly) || !tfliteFile.open(QIODevice::ReadOnly)) {
-        reason = tr("Handwriting sources are missing");
+        reason = ddTr("Handwriting sources are missing");
         return false;
     }
     const QByteArray recospecBytes = recospecFile.readAll();
@@ -476,7 +589,8 @@ bool DataDownloader::ensureConverted(QString &reason) {
     try {
         bundle = recognizer::convert_model(tflite, recospec);
     } catch (const recognizer::RecognizerError &e) {
-        reason = tr("Could not convert the handwriting model: %1").arg(QString::fromUtf8(e.what()));
+        reason =
+            ddTr("Could not convert the handwriting model: %1").arg(QString::fromUtf8(e.what()));
         return false;
     }
     if (!writeAtomic(net, bundle.safetensors, reason)) {
@@ -485,8 +599,20 @@ bool DataDownloader::ensureConverted(QString &reason) {
     // The engine decodes without the word-level language model, so
     // the obsolete pack (12 MB zip + 20 MB artifact) never
     // downloads again and existing copies go away.
-    QFile::remove(QDir(modelRoot).filePath(QStringLiteral("ja/lm.fst")));
-    QFile::remove(
-        QDir(modelRoot).filePath(QStringLiteral(".zips/ja_20190322_compact_fst_zip.zip")));
+    QFile::remove(QDir(rootDir).filePath(QStringLiteral("ja/lm.fst")));
+    QFile::remove(QDir(rootDir).filePath(QStringLiteral(".zips/ja_20190322_compact_fst_zip.zip")));
     return QFileInfo(net).size() == ModelPacks::safetensorsSize();
+}
+
+/// Conversion step returning a landing result (worker thread).
+ModelStepResult convertModelStep(const QString &rootDir, quint64 id) {
+    ModelStepResult result;
+    result.epoch = id;
+    QString reason;
+    if (!ensureConverted(rootDir, reason)) {
+        result.reason = std::move(reason);
+        return result;
+    }
+    result.ok = true;
+    return result;
 }

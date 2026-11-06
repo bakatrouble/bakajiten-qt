@@ -543,3 +543,33 @@ void TestMainWindow::menuBarFollowsForcedPalette() {
     AppSettings::shared().apply();
     QVERIFY2(rendered.lightnessF() > 0.7, qPrintable(rendered.name()));
 }
+
+void TestMainWindow::systemModeUsesSelectedStylePalette() {
+    // System mode follows the selected style's own palette, not the
+    // startup OS capture (regression: vista style under a
+    // windows11-captured white painted white panels). Fusion is
+    // always available, headless-safe.
+    if (!QStyleFactory::keys().contains(QStringLiteral("Fusion"), Qt::CaseInsensitive)) {
+        QSKIP("Fusion style not installed");
+    }
+    AppSettings styled;
+    styled.setScale(1.0);
+    styled.setStyle(QStringLiteral("Fusion"));
+    styled.setMode(ThemeMode::System);
+    styled.save();
+    AppSettings::shared().load();
+    AppSettings::shared().apply();
+    std::unique_ptr<QStyle> fusion(QStyleFactory::create(QStringLiteral("Fusion")));
+    QVERIFY2(fusion != nullptr, "fusion style missing");
+    const QColor live = QApplication::palette().color(QPalette::Window);
+    const QColor native = fusion->standardPalette().color(QPalette::Window);
+    // Restore the entry state first, then assert.
+    AppSettings restore;
+    restore.setScale(1.0);
+    restore.setStyle(QString());
+    restore.setMode(ThemeMode::System);
+    restore.save();
+    AppSettings::shared().load();
+    AppSettings::shared().apply();
+    QCOMPARE(live.name(), native.name());
+}

@@ -83,6 +83,9 @@ public:
     /// Apply the color scheme (system palette, or the forced
     /// dark/light one): live-safe, repaints follow.
     void applyPalette() const;
+    /// Palette for System mode: the chosen style's own standard
+    /// palette, else the startup OS capture.
+    QPalette systemPalette() const;
     /// Canvas paper follows the theme (dark palette = dark paper).
     bool darkPaper() const;
 

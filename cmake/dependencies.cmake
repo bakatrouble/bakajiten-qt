@@ -2,7 +2,7 @@
 # the Rust recognizer + dictionary (built via Corrosion), nothing else.
 # Defines the `librecognizer`/`libdict` CMake targets used below
 # (static for linking, shared for binding generation).
-find_package(Qt6 COMPONENTS Core Gui Widgets Svg Network REQUIRED)
+find_package(Qt6 COMPONENTS Core Gui Widgets Svg Network Concurrent REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(ZLIB REQUIRED)
 # yaml-cpp < 0.7 exports a plain `yaml-cpp` target without namespace.

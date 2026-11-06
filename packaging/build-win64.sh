@@ -27,6 +27,7 @@ docker run --rm -v "$PWD:/work" -v "$QTAPP/build-win64/builddir:/build" \
     bakajiten-cross:win64 \
     sh -c 'export HOME=/root; command -v ccache >/dev/null || dnf install -y ccache; cmake -S /work/frontends/qt -B /build \
         --toolchain /opt/toolchain/win64-toolchain.cmake \
+        -DCMAKE_BUILD_TYPE=Release \
         -DQt6_DIR=/opt/qt6-static/lib/cmake/Qt6 \
         -Dyaml-cpp_DIR=/opt/yaml-cpp-win/lib/cmake/yaml-cpp \
         -DZLIB_INCLUDE_DIR=/usr/x86_64-w64-mingw32/sys-root/mingw/include \

@@ -18,6 +18,7 @@ private slots:
     void panelHiddenByDefault();
     void toolbarSquareIcons();
     void buttonIconContrastsCheckedFill();
+    void buttonIconCheckedUsesAccentWithoutFillCue();
     void openButtonShowsPanel();
     void openButtonTogglesPanelClosed();
     void panelOpensUnderButton();
@@ -85,6 +86,7 @@ private slots:
     void settingsDialogModeAppliesLive();
     void settingsDialogPopupFollowsTheme();
     void menuBarFollowsForcedPalette();
+    void systemModeUsesSelectedStylePalette();
     void settingsDialogScaleRecreates();
     void settingsScalesBothFontModes();
     void fontScaleRescalesTableFont();

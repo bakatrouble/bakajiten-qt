@@ -29,6 +29,7 @@ docker run --rm -v "$PWD:/work" -v "$QTAPP/build-linuxstatic/builddir:/build" \
     -v "$CCACHE_HOST:/ccache" -e CCACHE_DIR=/ccache -e CCACHE_MAXSIZE=1G \
     bakajiten-cross:linux-static \
     sh -c 'export HOME=/root; cmake -S /work/frontends/qt -B /build \
+        -DCMAKE_BUILD_TYPE=Release \
         -DQt6_DIR=/opt/qt6-static/lib/cmake/Qt6 \
         -Dyaml-cpp_DIR=/opt/yaml-cpp-linux/lib/cmake/yaml-cpp \
         -DOPENSSL_ROOT_DIR=/opt/openssl \

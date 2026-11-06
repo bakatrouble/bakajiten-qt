@@ -310,6 +310,27 @@ void TestMainWindow::buttonIconContrastsCheckedFill() {
     QCOMPARE(inkName(QColor(Qt::black), QColor(Qt::black)), QStringLiteral("#ffffff"));
 }
 
+void TestMainWindow::buttonIconCheckedUsesAccentWithoutFillCue() {
+    // Glyph carries the checked state when the style paints no
+    // distinct checked fill (windows11 flat buttons): accent ink
+    // on the window color. A distinct fill keeps the old
+    // contrast-against-fill behavior exactly. Names, not QColors.
+    const QColor window(Qt::white);
+    const QColor accent(QColor(0x00, 0x78, 0xd4));
+    const QColor ink(Qt::black);
+    QCOMPARE(ButtonIcon::checkedInk(ink, window, window, accent, window).name(), accent.name());
+    // Distinct fills: unchanged behavior (white Kvantum fill flips
+    // a white glyph dark; Fusion's dark fill keeps a light glyph).
+    QCOMPARE(ButtonIcon::checkedInk(QColor(Qt::white), QColor(Qt::white), QColor(Qt::black), accent,
+                                    window)
+                 .name(),
+             QStringLiteral("#000000"));
+    QCOMPARE(ButtonIcon::checkedInk(QColor(Qt::white), QColor(Qt::black), QColor(Qt::white), accent,
+                                    window)
+                 .name(),
+             QStringLiteral("#ffffff"));
+}
+
 void TestMainWindow::queryButtonsSquareAndToolbarSpans() {
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");

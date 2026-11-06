@@ -18,6 +18,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <Qt>
+#include <QtConcurrent>
 
 namespace {
 QString formatMb(qint64 bytes) {
@@ -225,6 +226,12 @@ void DictionaryManagerDialog::onDownloadProgress(const QString &file, qint64 rec
 
 void DictionaryManagerDialog::onDownloadFinished() {
     DataStore::shared().clearBusy();
+    // Landed files change on-disk stats: drop the status cache so
+    // the next paint re-hashes (rows show Checking…, bulk actions
+    // stay disabled, instead of acting on stale verdicts).
+    statusesReady = false;
+    fileStatuses.clear();
+    statusKey.clear();
     QStringList notes;
     if (downloadsLanded) {
         notes << tr("Dictionaries are up to date.");
@@ -247,17 +254,80 @@ void DictionaryManagerDialog::onDownloadFailed(const QString &reason) {
     DataStore::shared().setNotice(tr("Download failed: %1").arg(reason));
 }
 
+/// One hashing pass over the release artifacts (worker thread):
+/// per-file freshness against a remote manifest. Inputs by value
+/// on purpose (thread boundary — the GUI thread keeps mutating
+/// its own copies).
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
+FileStatusResult checkFileStatuses(DataManifest remote, QStringList files) {
+    FileStatusResult result;
+    for (const QString &file : files) {
+        result.statuses[file] =
+            DataManifestReader::status(remote.files.value(file), DataPaths::filePath(file));
+    }
+    return result;
+}
+
+QString DictionaryManagerDialog::statusKeyFor(const DataStore::Snapshot &snapshot) const {
+    // Remote bytes (small manifest) plus cheap on-disk stats per
+    // file: any new remote, landed download, or removal moves it.
+    QString key = QString::number(qHash(snapshot.remoteBytes));
+    for (const QString &file : DataPaths::allFiles()) {
+        const QFileInfo info(DataPaths::filePath(file));
+        key += QStringLiteral(";%1:%2:%3")
+                   .arg(file)
+                   .arg(info.size())
+                   .arg(info.lastModified().toMSecsSinceEpoch());
+    }
+    return key;
+}
+
+void DictionaryManagerDialog::refreshStatuses(const DataStore::Snapshot &snapshot) {
+    if (!snapshot.remote.has_value()) {
+        return;
+    }
+    const QString key = statusKeyFor(snapshot);
+    if (statusesReady && key == statusKey) {
+        return;
+    }
+    const DataManifest remote = *snapshot.remote;
+    const quint64 id = ++statusEpoch;
+    auto *watcher = new QFutureWatcher<FileStatusResult>(this);
+    connect(watcher, &QFutureWatcher<FileStatusResult>::finished, this,
+            [this, watcher]() { onStatusesDone(watcher); });
+    watcher->setFuture(QtConcurrent::run([remote, id, key]() {
+        FileStatusResult result = checkFileStatuses(remote, DataPaths::allFiles());
+        result.epoch = id;
+        result.key = key;
+        return result;
+    }));
+}
+
+void DictionaryManagerDialog::onStatusesDone(QFutureWatcher<FileStatusResult> *watcher) {
+    const FileStatusResult result = watcher->result();
+    watcher->deleteLater();
+    if (result.epoch != statusEpoch) {
+        // Superseded by a newer pass (landings, removals, re-check).
+        return;
+    }
+    fileStatuses = result.statuses;
+    statusKey = result.key;
+    statusesReady = true;
+    renderRows();
+}
+
 QStringList DictionaryManagerDialog::outdatedAll() const {
+    // Cached hashing pass (worker thread): empty until the first
+    // pass lands; the Update-all button stays disabled meanwhile.
     const std::optional<DataManifest> snapshot = DataStore::shared().current().remote;
     QStringList stale;
-    if (!snapshot.has_value()) {
+    if (!snapshot.has_value() || !statusesReady) {
         return stale;
     }
     // Stale only: missing opt-ins are never auto-fetched.
     for (const QString &file : DataPaths::allFiles()) {
         if (QFileInfo::exists(DataPaths::filePath(file)) &&
-            DataManifestReader::status(snapshot->files.value(file), DataPaths::filePath(file)) ==
-                DataFileStatus::Outdated) {
+            fileStatuses.value(file, DataFileStatus::Missing) == DataFileStatus::Outdated) {
             stale << file;
         }
     }
@@ -265,14 +335,14 @@ QStringList DictionaryManagerDialog::outdatedAll() const {
 }
 
 QStringList DictionaryManagerDialog::pendingRequired() const {
+    // Same cache rules as outdatedAll().
     const std::optional<DataManifest> snapshot = DataStore::shared().current().remote;
     QStringList pending;
-    if (!snapshot.has_value()) {
+    if (!snapshot.has_value() || !statusesReady) {
         return pending;
     }
     for (const QString &file : DataPaths::requiredFiles()) {
-        if (DataManifestReader::status(snapshot->files.value(file), DataPaths::filePath(file)) !=
-            DataFileStatus::Current) {
+        if (fileStatuses.value(file, DataFileStatus::Missing) != DataFileStatus::Current) {
             pending << file;
         }
     }
@@ -332,7 +402,16 @@ void DictionaryManagerDialog::renderRows() {
         }
         const QString localVersion =
             local.has_value() ? local->files.value(file).version : QString();
-        switch (DataManifestReader::status(entry, path)) {
+        if (!statusesReady || !fileStatuses.contains(file)) {
+            // Hashing pass still running: rows paint instantly with
+            // a placeholder; actions stay disabled until it lands.
+            row->setStatus(tr("Checking…"));
+            row->setAction(tr("…"), false);
+            row->setRemoveVisible(present && !required);
+            row->setRemoveEnabled(!flying && present && !required);
+            continue;
+        }
+        switch (fileStatuses.value(file)) {
         case DataFileStatus::Missing: {
             QStringList lines;
             lines << tr("Not downloaded");
@@ -392,8 +471,11 @@ void DictionaryManagerDialog::renderRows() {
     clearButton->setVisible(anyPresent);
     const bool idle = snapshot.busy.isEmpty();
     const bool handwritingMissing = !ModelPacks::isCached();
-    requiredButton->setVisible(remote.has_value() && (!pending.isEmpty() || handwritingMissing));
-    if (!remote.has_value() || (pending.isEmpty() && !handwritingMissing)) {
+    // While the hashing pass runs, bulk buttons stay visible but
+    // disabled (no layout motion when the pass lands).
+    const bool needRequired = !pending.isEmpty() || handwritingMissing;
+    requiredButton->setVisible(remote.has_value() && (statusesReady ? needRequired : true));
+    if (!remote.has_value() || (statusesReady && !needRequired)) {
         requiredButton->setEnabled(false);
     } else {
         qint64 total = 0;
@@ -404,11 +486,11 @@ void DictionaryManagerDialog::renderRows() {
             total += ModelPacks::downloadBytes();
         }
         requiredButton->setText(tr("Download required (%1)").arg(formatMb(total)));
-        requiredButton->setEnabled(idle);
+        requiredButton->setEnabled(idle && statusesReady);
     }
     const QStringList stale = outdatedAll();
-    updateButton->setVisible(remote.has_value() && !stale.isEmpty());
-    if (!remote.has_value() || stale.isEmpty()) {
+    updateButton->setVisible(remote.has_value() && (statusesReady ? !stale.isEmpty() : true));
+    if (!remote.has_value() || (statusesReady && stale.isEmpty())) {
         updateButton->setEnabled(false);
     } else {
         qint64 total = 0;
@@ -416,11 +498,12 @@ void DictionaryManagerDialog::renderRows() {
             total += remote->files.value(file).gz;
         }
         updateButton->setText(tr("Update all (%1)").arg(formatMb(total)));
-        updateButton->setEnabled(idle);
+        updateButton->setEnabled(idle && statusesReady);
     }
     checkButton->setEnabled(idle);
     clearButton->setEnabled(idle);
     renderHandwritingRow();
+    refreshStatuses(snapshot);
 }
 
 void DictionaryManagerDialog::renderHandwritingRow() {

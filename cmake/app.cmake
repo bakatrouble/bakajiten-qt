@@ -99,7 +99,15 @@ target_include_directories(bakajiten PRIVATE src)
 # CXX-Qt crate target. Link the top Rust crate only (`libdict`
 # bundles `librecognizer` into its staticlib — linking both
 # duplicates the UniFFI symbols).
-target_link_libraries(bakajiten PRIVATE Qt6::Widgets Qt6::Svg Qt6::Network appsettings appstate dict recognizer uniffi_recognizer uniffi_dict)
+target_link_libraries(bakajiten PRIVATE Qt6::Widgets Qt6::Svg Qt6::Network Qt6::Concurrent appsettings appstate dict recognizer uniffi_recognizer uniffi_dict)
+if(WIN32)
+    # GUI subsystem: no console window next to the app (entry point
+    # via Qt's WinMain; test binaries keep their console).
+    set_target_properties(bakajiten PROPERTIES WIN32_EXECUTABLE TRUE)
+    if(TARGET Qt6::WinMain)
+        target_link_libraries(bakajiten PRIVATE Qt6::WinMain)
+    endif()
+endif()
 # Optional embedded CJK fallback (Noto Sans JP): downloaded once at
 # configure time into the build tree and compiled into the binary via
 # a generated .qrc. Off everywhere except the Windows cross build

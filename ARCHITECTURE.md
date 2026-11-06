@@ -98,8 +98,11 @@ Debug builds, OFF otherwise.
   state. Keys (under `ui/`, flat-file fallback on read):
   `scale` (double, clamped 0.5–3.0), `style` (empty = OS
   default), `mode` (`ThemeMode` System/Dark/Light, default
-  System; Dark/Light force the app palette outright and switch a
-  Kvantum style to a palette-driven one (Breeze, else Fusion)),
+  System; Dark/Light force the app palette outright and switch
+  a palette-ignoring style to a palette-driven one (Breeze,
+  else Fusion — Kvantum, windows11); System restores the
+  explicitly chosen style's own standard palette, else the
+  startup OS capture),
   `reading` (`ReadingDisplay` Kana/Hepburn/Kunrei),
   `checkUpdates` (bool, default true). File:
   `<AppConfigLocation>/settings.yaml` (or
@@ -156,14 +159,19 @@ Debug builds, OFF otherwise.
   sha256 → `Missing/Outdated/Current`. Pure logic, unit-tested.
 - `Gzip` — system-zlib gunzip: header parsed/stripped, raw
   deflate, ISIZE checked (CRC left to the sha256 check).
-- `DataChecker` / `DataDownloader` (`QObject`, async NAM, no
-  threads): check manifest → per-file rows (Missing/Outdated/
-  Current + Download/Update/disabled); download streams to
-  `.gz.part`, gunzips, sha256-verifies, atomically renames;
-  progress 0–1000; required files batch under one button. The
-  handwriting pack rides a second downloader instance under the
-  `handwriting` key: dl.google.com zips, sha1-verified, unzipped
-  via `util/Archive`, one pack at a time with cumulative progress.
+- `DataChecker` / `DataDownloader` (`QObject`, async NAM,
+  blocking work on worker threads): check manifest → per-file
+  rows (Missing/Outdated/ Current + Download/Update/disabled);
+  download streams to `.gz.part` on the GUI thread while a
+  `QtConcurrent` worker gunzips, sha256-verifies and atomically
+  renames; row freshness (full-file sha256) hashes in a worker
+  too, keyed on manifest bytes + on-disk stats, so dialog opens
+  and progress ticks never stall; progress 0–1000; required files
+  batch under one button. The handwriting pack rides a second downloader
+  instance under the `handwriting` key: dl.google.com zips,
+  sha1-verified, unzipped via `util/Archive`, one pack at a
+  time with cumulative progress — install and Rust conversion
+  likewise on a worker, only signals land back on the GUI.
 - `DataDialog` (code-built, modeless, `WA_DeleteOnClose`):
   rows per file (name + status + action), progress bar hidden
   unless downloading (retained size, no relayout), `dataChanged`
@@ -408,7 +416,9 @@ edge-fade ends. `ButtonIcon` re-tints bundled SVGs
 (`currentColor` replaced at pixmap time) on theme switch;
 the checked-On state renders in a contrasting ink sampled
 against the style's real checked-button fill (white under
-Kvantum, dark under Fusion).
+Kvantum, dark under Fusion); when the style paints no distinct
+checked fill, the glyph itself carries the state in the accent
+color.
 
 ## 16. Packaging and install layout
 
@@ -417,7 +427,9 @@ icons; data is never bundled (resolved at runtime from
 `/usr/share/bakajiten` or CWD fallbacks). Per-platform static
 builds live in `packaging/` (win64 MinGW + embedded CJK font,
 linux-static with vendored OpenSSL, AppImage via linuxdeploy,
-macOS `.app` via macdeployqt). CI pulls prebuilt GHCR images
+macOS `.app` via macdeployqt). Windows builds use the GUI
+subsystem (`WIN32_EXECUTABLE`, Qt's WinMain — no console
+window). CI pulls prebuilt GHCR images
 and caches ccache dirs per image; release artifacts carry the
 per-kind update asset.
 

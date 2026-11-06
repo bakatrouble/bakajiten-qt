@@ -66,16 +66,14 @@ private:
     QColor dimOnInk_;
 };
 
-/// What the style paints under a checked flat button (all icon
-/// buttons are flat): probed offscreen through the style itself,
-/// so the On-state ink contrasts with the real fill (Kvantum
-/// paints it white; Fusion keeps it dark). Transparent when the
-/// style paints nothing — the caller falls back to the window.
-QColor checkedFlatFill() {
+/// What a flat button paints under itself, checked or not (all
+/// icon buttons are flat): probed offscreen through the style
+/// itself. Transparent when the style paints nothing.
+QColor flatBevelFill(bool checked) {
     QPushButton probe;
     probe.setFlat(true);
     probe.setCheckable(true);
-    probe.setChecked(true);
+    probe.setChecked(checked);
     probe.resize(40, 40);
     probe.ensurePolished();
     QPixmap pm(probe.size());
@@ -83,12 +81,20 @@ QColor checkedFlatFill() {
     QPainter painter(&pm);
     QStyleOptionButton option;
     option.initFrom(&probe);
-    option.state |= QStyle::State_On;
+    if (checked) {
+        option.state |= QStyle::State_On;
+    } else {
+        option.state &= ~QStyle::State_On;
+    }
     option.rect = QRect(QPoint(0, 0), pm.size());
     probe.style()->drawControl(QStyle::CE_PushButtonBevel, &option, &painter, &probe);
     painter.end();
     return pm.toImage().pixelColor(pm.rect().center());
 }
+
+/// What the style paints under a checked flat button: `flatBevelFill(true)`,
+/// transparent when the style paints nothing.
+QColor checkedFlatFill() { return flatBevelFill(true); }
 } // namespace
 
 QColor ButtonIcon::contrastingInk(const QColor &base, const QColor &background) {
@@ -101,6 +107,23 @@ QColor ButtonIcon::contrastingInk(const QColor &base, const QColor &background) 
     QColor flipped = base;
     flipped.setHsl(flipped.hslHue(), flipped.hslSaturation(), 255 - flipped.lightness());
     return flipped;
+}
+
+QColor ButtonIcon::checkedInk(const QColor &ink, const QColor &checkedFill,
+                              const QColor &uncheckedFill, const QColor &highlight,
+                              const QColor &window) {
+    // A distinct checked fill carries the state on its own: the
+    // glyph only needs to stay readable on it.
+    if (qAbs(checkedFill.lightness() - uncheckedFill.lightness()) >= 24) {
+        return contrastingInk(ink, checkedFill);
+    }
+    // No background cue (checked paints like unchecked): the glyph
+    // itself carries the state in the accent color, when the
+    // accent stands out from the window behind it.
+    if (qAbs(highlight.lightness() - window.lightness()) >= 64) {
+        return highlight;
+    }
+    return contrastingInk(ink, checkedFill);
 }
 
 void ButtonIcon::apply(QAbstractButton *button, const QString &name) {
@@ -128,11 +151,21 @@ QIcon ButtonIcon::icon(const QString &name) {
     // Checked fill from the style (white under Kvantum): the
     // On-state ink contrasts with it, the Off state keeps the
     // theme ink (checked buttons are the only ones whose
-    // background leaves the window color).
-    QColor fill = checkedFlatFill();
-    if (!fill.alpha()) {
-        fill = palette.color(QPalette::Window);
+    // background leaves the window color). When the style paints
+    // no distinct checked fill (windows11 flat buttons), the
+    // accent-colored glyph carries the checked state instead.
+    QColor checked = checkedFlatFill();
+    if (!checked.alpha()) {
+        checked = palette.color(QPalette::Window);
     }
-    return QIcon(new SvgEngine(name, svg, ink, dimInk, contrastingInk(ink, fill),
-                               contrastingInk(dimInk, fill)));
+    QColor unchecked = flatBevelFill(false);
+    if (!unchecked.alpha()) {
+        unchecked = palette.color(QPalette::Window);
+    }
+    const QColor onInk = checkedInk(ink, checked, unchecked, palette.color(QPalette::Highlight),
+                                    palette.color(QPalette::Window));
+    const QColor onDimInk =
+        checkedInk(dimInk, checked, unchecked, palette.color(QPalette::Highlight),
+                   palette.color(QPalette::Window));
+    return QIcon(new SvgEngine(name, svg, ink, dimInk, onInk, onDimInk));
 }

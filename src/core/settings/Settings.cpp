@@ -214,9 +214,12 @@ void AppSettings::applyStyle() const {
     // the previous object installed would keep the last theme).
     QString name = m_style.isEmpty() ? osStyleName() : m_style;
     if (m_mode != ThemeMode::System &&
-        name.startsWith(QStringLiteral("kvantum"), Qt::CaseInsensitive)) {
-        // Kvantum paints from its own theme config and ignores the
-        // forced palette, so Dark/Light would not hold — fall back
+        (name.startsWith(QStringLiteral("kvantum"), Qt::CaseInsensitive) ||
+         name.startsWith(QStringLiteral("windows11"), Qt::CaseInsensitive))) {
+        // These styles paint from their own theme source and ignore
+        // the forced palette (Kvantum its theme config, windows11
+        // the Windows system theme — its controls go blind under a
+        // forced palette), so Dark/Light would not hold — fall back
         // to a palette-driven style (Breeze first: native on KDE).
         const QStringList installed = QStyleFactory::keys();
         for (const QString &candidate : {QStringLiteral("breeze"), QStringLiteral("fusion")}) {
@@ -238,8 +241,10 @@ void AppSettings::applyStyle() const {
 void AppSettings::applyPalette() const {
     // Forced modes set the application palette outright (style
     // repolish + PaletteChange refreshes repaint everything live);
-    // System restores the startup one (never the current live
-    // palette, which a forced mode may own).
+    // System restores the selected style's own palette — the
+    // startup OS one only when no style is chosen (a cross-style
+    // restore, e.g. vista style under a windows11-captured white,
+    // repaints natively-painted surfaces the wrong color).
     switch (m_mode) {
     case ThemeMode::Dark:
         QApplication::setPalette(darkForcedPalette());
@@ -248,9 +253,22 @@ void AppSettings::applyPalette() const {
         QApplication::setPalette(lightForcedPalette());
         break;
     case ThemeMode::System:
-        QApplication::setPalette(osPaletteSlot());
+        QApplication::setPalette(systemPalette());
         break;
     }
+}
+
+/// Palette for System mode: the explicitly chosen style's own
+/// standard palette, else the startup OS capture.
+QPalette AppSettings::systemPalette() const {
+    if (!m_style.isEmpty()) {
+        if (QStyle *probed = QStyleFactory::create(m_style)) {
+            QPalette palette = probed->standardPalette();
+            delete probed;
+            return palette;
+        }
+    }
+    return osPaletteSlot();
 }
 
 bool AppSettings::darkPaper() const {

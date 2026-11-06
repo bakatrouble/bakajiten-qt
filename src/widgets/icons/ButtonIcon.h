@@ -31,4 +31,13 @@ public:
     /// Ink readable on `background`: `base` untouched when it
     /// already stands out, lightness-flipped otherwise.
     static QColor contrastingInk(const QColor &base, const QColor &background);
+    /// On-state glyph ink for a checkable button: when the style
+    /// paints a distinct checked fill, the ink contrasts with it;
+    /// when checked and unchecked fills match (the style gives no
+    /// background cue, e.g. windows11 flat buttons), the glyph
+    /// itself carries the state in the accent color. Pure logic,
+    /// unit-tested.
+    static QColor checkedInk(const QColor &ink, const QColor &checkedFill,
+                             const QColor &uncheckedFill, const QColor &highlight,
+                             const QColor &window);
 };
