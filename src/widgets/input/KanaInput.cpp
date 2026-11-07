@@ -25,20 +25,19 @@ QString KanaInput::searchText(const QString &text) {
     return QString::fromStdString(dict::romaji_to_kana(text.toStdString()));
 }
 
-bool KanaInput::atEnd() const {
-    return field->cursorPosition() == field->text().size() && !field->hasSelectedText();
-}
-
 bool KanaInput::hasPending() const {
     return conversionEnabled && dict::romaji_has_pending(raw.toStdString());
 }
 
 void KanaInput::setConversionEnabled(bool enabled) { conversionEnabled = enabled; }
 
-void KanaInput::render() {
+void KanaInput::render(int cursorPos) {
     rendering = true;
     field->setText(QString::fromStdString(dict::romaji_display(raw.toStdString())));
-    field->setCursorPosition(static_cast<int>(field->text().size()));
+    if (cursorPos < 0 || cursorPos > field->text().size()) {
+        cursorPos = static_cast<int>(field->text().size());
+    }
+    field->setCursorPosition(cursorPos);
     rendering = false;
 }
 
@@ -76,8 +75,8 @@ bool KanaInput::eventFilter(QObject *watched, QEvent *event) {
     if (!hasPending() && field->hasSelectedText() &&
         (convertible || key->key() == Qt::Key_Backspace)) {
         // Selection replace: drop the selection first (the buffer
-        // re-syncs from the field text); typing then converts when
-        // the cursor lands at the end, backspace is done already.
+        // re-syncs from the field text); typing then converts at
+        // the cursor, backspace is done already.
         field->del();
         if (key->key() == Qt::Key_Backspace) {
             return true;
@@ -89,9 +88,23 @@ bool KanaInput::eventFilter(QObject *watched, QEvent *event) {
         // — and the buffer re-syncs from the field text below.
         return QObject::eventFilter(watched, event);
     }
-    if (convertible && atEnd()) {
-        raw += pressed.toLower();
-        render();
+    if (convertible) {
+        // Convert at the cursor, not just at the end: splice the
+        // keystroke into the field text and re-derive the buffer
+        // from the result. The converter passes kana through, so
+        // settled text survives verbatim and only the keystroke's
+        // neighborhood re-tokenizes (mid-line `k` → pending raw,
+        // a following vowel settles it — same as end typing).
+        const QString typed = pressed.toLower();
+        const int pos = field->cursorPosition();
+        QString text = field->text();
+        text.insert(pos, typed);
+        raw = text;
+        // Cursor follows the converted head: its display length
+        // (the new mora replaces the pending tail in place).
+        const int headLen = static_cast<int>(
+            QString::fromStdString(dict::romaji_display(text.left(pos + 1).toStdString())).size());
+        render(headLen);
         return true;
     }
     // Mid-composition the field is modal: arrows, space, return

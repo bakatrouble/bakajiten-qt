@@ -7,15 +7,18 @@ class QLineEdit;
 
 /// IME-like romaji → kana for the search field: a raw romaji buffer behind the
 /// visible text, so ASCII letters convert as they land (`ta` →
-/// `た`, pending tail shown raw). While a mora is pending the
-/// field is modal: only backspace and conversion keystrokes land
-/// (arrows, space, return wait), and neither keys nor clicks move
-/// the cursor. Backspace keeps default handling and deletes the
-/// last display character whole (never un-converts); the buffer
-/// re-syncs from the field text. ASCII letters at the end of the
-/// field convert through the Rust table; everything else (direct
-/// kana, paste, mid-text edits, candidate inserts) falls through
-/// to the field and re-syncs the buffer.
+/// `た`, pending tail shown raw). Conversion happens at the
+/// cursor, mid-line included: the keystroke splices into the
+/// field text and the buffer re-derives from the mix (the
+/// converter passes kana through, so settled text survives
+/// verbatim). While a mora is pending the field is modal: only
+/// backspace and conversion keystrokes land (arrows, space,
+/// return wait), and neither keys nor clicks move the cursor.
+/// Backspace keeps default handling and deletes the last display
+/// character whole (never un-converts); the buffer re-syncs from
+/// the field text. ASCII letters convert through the Rust table;
+/// everything else (direct kana, paste, candidate inserts) falls
+/// through to the field and re-syncs the buffer.
 /// Owned by DictionaryWidget, rebound per form (dev reload swaps
 /// the field).
 class KanaInput : public QObject {
@@ -46,9 +49,9 @@ private slots:
     void onFieldChanged(const QString &text);
 
 private:
-    /// Render display(raw), cursor to end.
-    void render();
-    bool atEnd() const;
+    /// Render display(raw); cursor to the converted head, or to
+    /// the end when cursorPos is negative.
+    void render(int cursorPos = -1);
 
     QLineEdit *field = nullptr;
     QString raw;

@@ -46,6 +46,37 @@ void TestMainWindow::kanaInputConvertsWhileTyping() {
     QCOMPARE(input->text(), QStringLiteral("しゃしょしゅ"));
 }
 
+void TestMainWindow::kanaInputConvertsMidLine() {
+    // Convertible keystrokes convert at the cursor, not just at
+    // the end: the keystroke splices into the field text and the
+    // buffer re-derives from the mix (kana passes through, so
+    // settled text survives verbatim).
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *input = window->findChild<QLineEdit *>("searchInput");
+    QVERIFY2(input != nullptr, "search input missing");
+    input->clear();
+    QTest::keyClicks(input, "tana");
+    QCOMPARE(input->text(), QStringLiteral("たな"));
+    // Mid-line `k`: pending raw in place, cursor after it.
+    input->setCursorPosition(1);
+    QTest::keyClicks(input, "k");
+    QCOMPARE(input->text(), QStringLiteral("たkな"));
+    QCOMPARE(input->cursorPosition(), 2);
+    // The vowel settles it without moving the tail.
+    QTest::keyClicks(input, "a");
+    QCOMPARE(input->text(), QStringLiteral("たかな"));
+    QCOMPARE(input->cursorPosition(), 2);
+    // Mid-line backspace still deletes whole display chars.
+    input->setCursorPosition(1);
+    QTest::keyClick(input, Qt::Key_Backspace);
+    QCOMPARE(input->text(), QStringLiteral("かな"));
+    // Typing at the end still converts as before.
+    QTest::keyClick(input, Qt::Key_End);
+    QTest::keyClicks(input, "ka");
+    QCOMPARE(input->text(), QStringLiteral("かなか"));
+}
+
 void TestMainWindow::kanaInputSearchesConverted() {
     std::unique_ptr<MainWindow> window(openWindow());
     QVERIFY2(window != nullptr, "window never exposed");
