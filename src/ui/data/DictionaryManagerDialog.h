@@ -1,9 +1,9 @@
 #pragma once
 
-#include <QDialog>
 #include <QFutureWatcher>
 #include <QMap>
 #include <QString>
+#include <QWidget>
 
 #include <optional>
 
@@ -31,7 +31,7 @@ struct FileStatusResult {
     QMap<QString, DataFileStatus> statuses;
 };
 
-/// Dictionaries dialog (Help menu): a scrollable list like the
+/// Dictionaries dialog (File menu): a scrollable list like the
 /// Android manager — Required then Optional sections, one row
 /// widget per artifact with its status (saved/latest versions +
 /// sizes), Download/Update and Remove buttons, and its own
@@ -44,7 +44,7 @@ struct FileStatusResult {
 /// are opt-in (never auto-fetched). Removes ask first (required files have no Remove button at
 /// all). State lives in the DataStore singleton (this view only renders its snapshots); emits
 /// dataChanged when files land so the views reload.
-class DictionaryManagerDialog : public QDialog {
+class DictionaryManagerDialog : public QWidget {
     Q_OBJECT
 public:
     explicit DictionaryManagerDialog(QWidget *parent = nullptr);
@@ -62,6 +62,8 @@ private slots:
     void onRequiredAction();
     void onUpdateAllAction();
     void onClearAllAction();
+    /// Open the data directory in the system file manager.
+    void onOpenDataDir();
     void onDownloadProgress(const QString &file, qint64 received, qint64 total);
     void onDownloadFinished();
     void onDownloadFailed(const QString &reason);
@@ -122,6 +124,8 @@ private:
     QPushButton *updateButton = nullptr;
     QPushButton *checkButton = nullptr;
     QPushButton *clearButton = nullptr;
+    QPushButton *openDirButton = nullptr;
+    QPushButton *closeButton = nullptr;
     QMap<QString, DictionaryManagerRow *> rows;
     DataChecker *checker = nullptr;
     DataDownloader *downloader = nullptr;

@@ -200,7 +200,9 @@ void MainWindow::openDictionaries() {
         ui->centralwidget->refreshArtifacts();
         recognizer->reloadModel();
     });
-    dialog->open();
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
 
 void MainWindow::checkData() {

@@ -9,6 +9,7 @@
 #include <QDialogButtonBox>
 #include <QFile>
 #include <QFileInfo>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QMenuBar>
@@ -419,9 +420,44 @@ void TestMainWindow::dataDialogBuildsFromForm() {
     QVERIFY(info->wordWrap());
     auto *scroll = dialog.findChild<QScrollArea *>("rowsScroll");
     QVERIFY2(scroll != nullptr, "rows scroller missing");
-    auto *buttons = dialog.findChild<QDialogButtonBox *>();
-    QVERIFY2(buttons != nullptr, "button box missing");
-    QVERIFY2(buttons->button(QDialogButtonBox::Close) != nullptr, "Close button missing");
+    auto *row = dialog.findChild<QHBoxLayout *>("buttonRow");
+    QVERIFY2(row != nullptr, "button row missing");
+    const QStringList names({QStringLiteral("requiredButton"), QStringLiteral("updateButton"),
+                             QStringLiteral("checkButton"), QStringLiteral("clearButton"),
+                             QStringLiteral("openDirButton"), QStringLiteral("closeButton")});
+    QList<const QPushButton *> rowButtons;
+    const QMap<QString, QString> labels(
+        {{QStringLiteral("requiredButton"), QStringLiteral("Download required")},
+         {QStringLiteral("updateButton"), QStringLiteral("Update all")},
+         {QStringLiteral("checkButton"), QStringLiteral("Check for updates")},
+         {QStringLiteral("clearButton"), QStringLiteral("Clear cached files")},
+         {QStringLiteral("openDirButton"), QStringLiteral("Open data directory")},
+         {QStringLiteral("closeButton"), QStringLiteral("Close")}});
+    for (const QString &name : names) {
+        auto *button = dialog.findChild<QPushButton *>(name);
+        QVERIFY2(button != nullptr, qPrintable(name + QStringLiteral(" missing from row")));
+        QVERIFY2(row->indexOf(button) >= 0, qPrintable(name + QStringLiteral(" not in row")));
+        QCOMPARE(button->text(), labels.value(name));
+        rowButtons << button;
+    }
+    const QPushButton *openDir = dialog.findChild<QPushButton *>(QStringLiteral("openDirButton"));
+    QVERIFY2(openDir->isEnabled(), "Open data directory button disabled");
+    // Live row layout: visible buttons never overlap.
+    QList<const QPushButton *> visibleRowButtons;
+    for (const QPushButton *button : rowButtons) {
+        if (button->isVisibleTo(&dialog)) {
+            visibleRowButtons << button;
+        }
+    }
+    QVERIFY2(!visibleRowButtons.isEmpty(), "no visible row buttons");
+    for (int i = 0; i < visibleRowButtons.size(); ++i) {
+        for (int j = i + 1; j < visibleRowButtons.size(); ++j) {
+            QVERIFY2(
+                !visibleRowButtons[i]->geometry().intersects(visibleRowButtons[j]->geometry()),
+                qPrintable(QStringLiteral("%1 overlaps %2")
+                               .arg(visibleRowButtons[i]->text(), visibleRowButtons[j]->text())));
+        }
+    }
     // Two section headers plus one row widget per artifact file,
     // with the Japanese handwriting row at the end of Required
     // (dl.google.com pack, not a release artifact).
@@ -542,6 +578,39 @@ void TestMainWindow::menuBarFollowsForcedPalette() {
     AppSettings::shared().load();
     AppSettings::shared().apply();
     QVERIFY2(rendered.lightnessF() > 0.7, qPrintable(rendered.name()));
+}
+
+void TestMainWindow::dictionariesMenuLivesUnderFile() {
+    // Dictionaries lives under File (data management sits with
+    // Settings), not Help. Also covers the dialog's Open data
+    // directory button (presence only — clicking would open the
+    // real file manager).
+    std::unique_ptr<MainWindow> window(openWindow());
+    QVERIFY2(window != nullptr, "window never exposed");
+    auto *bar = window->findChild<QMenuBar *>("menubar");
+    QVERIFY2(bar != nullptr, "menu bar missing");
+    const auto menus = bar->findChildren<QMenu *>();
+    const QMenu *fileMenu = nullptr;
+    const QMenu *helpMenu = nullptr;
+    for (const QMenu *menu : menus) {
+        if (menu->title() == QStringLiteral("&File")) {
+            fileMenu = menu;
+        } else if (menu->title() == QStringLiteral("&Help")) {
+            helpMenu = menu;
+        }
+    }
+    QVERIFY2(fileMenu != nullptr, "File menu missing");
+    QVERIFY2(helpMenu != nullptr, "Help menu missing");
+    const auto inMenu = [](const QMenu *menu, const QString &text) {
+        for (const QAction *action : menu->actions()) {
+            if (action->text() == text) {
+                return true;
+            }
+        }
+        return false;
+    };
+    QVERIFY2(inMenu(fileMenu, QStringLiteral("&Dictionaries…")), "Dictionaries not under File");
+    QVERIFY2(!inMenu(helpMenu, QStringLiteral("&Dictionaries…")), "Dictionaries still under Help");
 }
 
 void TestMainWindow::systemModeUsesSelectedStylePalette() {

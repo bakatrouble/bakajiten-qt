@@ -9,13 +9,14 @@
 #include "ui/data/DictionaryManagerRow.h"
 #include "ui_DictionaryManagerDialog.h"
 
-#include <QDialogButtonBox>
+#include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <Qt>
 #include <QtConcurrent>
@@ -35,7 +36,11 @@ QString latestLine(const DataFileEntry &entry) {
 }
 } // namespace
 
-DictionaryManagerDialog::DictionaryManagerDialog(QWidget *parent) : QDialog(parent) {
+DictionaryManagerDialog::DictionaryManagerDialog(QWidget *parent) : QWidget(parent) {
+    // Plain window, not a dialog: independent window decorations
+    // and taskbar entry even with a parent (a parented QWidget
+    // would embed into the main window instead).
+    setWindowFlags(Qt::Window);
     auto [built, form] =
         buildForm<Ui::DictionaryManagerDialog>(this, "ui/data/DictionaryManagerDialog.ui");
     ui = built;
@@ -87,19 +92,25 @@ DictionaryManagerDialog::DictionaryManagerDialog(QWidget *parent) : QDialog(pare
         }
     }
     rowsLayout->addStretch(1);
-    auto *buttons = ui->buttonBox;
-    requiredButton = buttons->addButton(tr("Download required"), QDialogButtonBox::ActionRole);
+    // Buttons live in the .ui button row (labels included); here
+    // they are only wired up, and visibility is driven per state
+    // below. No QDialogButtonBox: a plain horizontal layout with
+    // the Close button pinned right by the stretch.
+    requiredButton = ui->requiredButton;
     requiredButton->setEnabled(false);
     connect(requiredButton, &QPushButton::clicked, this,
             &DictionaryManagerDialog::onRequiredAction);
-    updateButton = buttons->addButton(tr("Update all"), QDialogButtonBox::ActionRole);
+    updateButton = ui->updateButton;
     updateButton->setEnabled(false);
     connect(updateButton, &QPushButton::clicked, this, &DictionaryManagerDialog::onUpdateAllAction);
-    checkButton = buttons->addButton(tr("Check for updates"), QDialogButtonBox::ActionRole);
+    checkButton = ui->checkButton;
     connect(checkButton, &QPushButton::clicked, this, &DictionaryManagerDialog::onCheck);
-    clearButton = buttons->addButton(tr("Clear cached files"), QDialogButtonBox::ActionRole);
+    clearButton = ui->clearButton;
     connect(clearButton, &QPushButton::clicked, this, &DictionaryManagerDialog::onClearAllAction);
-    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::close);
+    openDirButton = ui->openDirButton;
+    connect(openDirButton, &QPushButton::clicked, this, &DictionaryManagerDialog::onOpenDataDir);
+    closeButton = ui->closeButton;
+    connect(closeButton, &QPushButton::clicked, this, &QWidget::close);
     checker = new DataChecker(this);
     connect(checker, &DataChecker::checked, this, &DictionaryManagerDialog::onChecked);
     connect(checker, &DataChecker::checkFailed, this, &DictionaryManagerDialog::onCheckFailed);
@@ -206,6 +217,10 @@ void DictionaryManagerDialog::onClearAllAction() {
     // the dialog like any required file).
     QDir(ModelPacks::rootDir()).removeRecursively();
     DataStore::shared().refresh();
+}
+
+void DictionaryManagerDialog::onOpenDataDir() {
+    QDesktopServices::openUrl(QUrl::fromLocalFile(DataPaths::directory()));
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)

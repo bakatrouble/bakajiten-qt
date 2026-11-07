@@ -21,6 +21,7 @@
      <string>&amp;File</string>
     </property>
     <addaction name="actionSettings"/>
+    <addaction name="actionDictionaries"/>
     <addaction name="actionQuit"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
@@ -29,7 +30,6 @@
     </property>
     <addaction name="actionAbout"/>
     <addaction name="actionAboutQt"/>
-    <addaction name="actionDictionaries"/>
     <addaction name="actionCheckUpdates"/>
    </widget>
    <addaction name="menuFile"/>

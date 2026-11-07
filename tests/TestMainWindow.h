@@ -49,6 +49,7 @@ private slots:
     void candidateDoubleClickOpensDialog();
     void candidateSlowClicksInsertTwice();
     void kanaInputConvertsWhileTyping();
+    void kanaInputConvertsMidLine();
     void kanaInputSearchesConverted();
     void kanaInputModalWhilePending();
     void kanaInputPartialMoraSkipsSearch();
@@ -87,6 +88,7 @@ private slots:
     void settingsDialogPopupFollowsTheme();
     void menuBarFollowsForcedPalette();
     void systemModeUsesSelectedStylePalette();
+    void dictionariesMenuLivesUnderFile();
     void settingsDialogScaleRecreates();
     void settingsScalesBothFontModes();
     void fontScaleRescalesTableFont();
