@@ -170,6 +170,9 @@ endif()
 # macos-arm64/macos-x64 zips). Empty disables update checks.
 set(BAKAJITEN_UPDATE_ARTIFACT "" CACHE STRING "Update artifact kind")
 target_compile_definitions(bakajiten PRIVATE "BAKAJITEN_UPDATE_ARTIFACT=\"${BAKAJITEN_UPDATE_ARTIFACT}\"")
+# About dialog version: single source is project() VERSION above —
+# main.cpp only stringifies this macro, never a literal.
+target_compile_definitions(bakajiten PRIVATE "BAKAJITEN_VERSION=\"${PROJECT_VERSION}\"")
 # Static Qt links no platform plugin DLL: import the platform
 # integration statically. Only for static Qt builds (shared builds
 # resolve plugins from their DLLs at runtime — and their plugin

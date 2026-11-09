@@ -26,14 +26,38 @@ QString KanaInput::searchText(const QString &text) {
 }
 
 bool KanaInput::hasPending() const {
-    return conversionEnabled && dict::romaji_has_pending(raw.toStdString());
+    if (!conversionEnabled || field == nullptr) {
+        return false;
+    }
+    // Pending lives at the cursor, not at the end: the maximal
+    // trailing [a-z'-] run ending at the cursor is the live mora
+    // (`あnあ` keeps its `n` raw so `a` can settle it to な).
+    const QString text = field->text();
+    const int pos = field->cursorPosition();
+    int start = pos;
+    while (start > 0) {
+        const QChar c = text.at(start - 1);
+        if (c.unicode() < 128 && (c.isLetter() || c == u'-' || c == u'\'')) {
+            --start;
+        } else {
+            break;
+        }
+    }
+    if (start >= pos) {
+        return false;
+    }
+    return dict::romaji_has_pending(text.mid(start, pos - start).toStdString());
 }
 
 void KanaInput::setConversionEnabled(bool enabled) { conversionEnabled = enabled; }
 
 void KanaInput::render(int cursorPos) {
+    // The buffer already holds display text (the keystroke path
+    // converts the run before storing), so set it directly — no
+    // second display() pass, which would commit a mid-word `n`
+    // followed by kana.
     rendering = true;
-    field->setText(QString::fromStdString(dict::romaji_display(raw.toStdString())));
+    field->setText(raw);
     if (cursorPos < 0 || cursorPos > field->text().size()) {
         cursorPos = static_cast<int>(field->text().size());
     }
@@ -71,7 +95,11 @@ bool KanaInput::eventFilter(QObject *watched, QEvent *event) {
     }
     const QString pressed = key->text();
     const bool ascii = pressed.size() == 1 && pressed.at(0).unicode() < 128;
-    const bool convertible = ascii && (pressed.at(0).isLetter() || pressed.at(0) == u'-');
+    // Letters and `-` extend the romaji run; `/` converts standalone to
+    // the middle dot (same run-extension path: the run scan never
+    // includes `/`, so it settles the pending run first, like zkanji).
+    const bool convertible =
+        ascii && (pressed.at(0).isLetter() || pressed.at(0) == u'-' || pressed.at(0) == u'/');
     if (!hasPending() && field->hasSelectedText() &&
         (convertible || key->key() == Qt::Key_Backspace)) {
         // Selection replace: drop the selection first (the buffer
@@ -89,22 +117,29 @@ bool KanaInput::eventFilter(QObject *watched, QEvent *event) {
         return QObject::eventFilter(watched, event);
     }
     if (convertible) {
-        // Convert at the cursor, not just at the end: splice the
-        // keystroke into the field text and re-derive the buffer
-        // from the result. The converter passes kana through, so
-        // settled text survives verbatim and only the keystroke's
-        // neighborhood re-tokenizes (mid-line `k` → pending raw,
-        // a following vowel settles it — same as end typing).
+        // Run extension at the cursor: the maximal trailing
+        // [a-z'-] run ending at the cursor plus the keystroke
+        // converts as a unit (`あn` + `a` → `あな`), so a mid-word
+        // `n` stays raw until the next keystroke settles it. The
+        // converter passes kana through, and display() on the pure
+        // run handles nn-commit and lookahead; only the run is
+        // replaced, the tail after the cursor never moves.
         const QString typed = pressed.toLower();
         const int pos = field->cursorPosition();
-        QString text = field->text();
-        text.insert(pos, typed);
-        raw = text;
-        // Cursor follows the converted head: its display length
-        // (the new mora replaces the pending tail in place).
-        const int headLen = static_cast<int>(
-            QString::fromStdString(dict::romaji_display(text.left(pos + 1).toStdString())).size());
-        render(headLen);
+        const QString text = field->text();
+        int start = pos;
+        while (start > 0) {
+            const QChar c = text.at(start - 1);
+            if (c.unicode() < 128 && (c.isLetter() || c == u'-' || c == u'\'')) {
+                --start;
+            } else {
+                break;
+            }
+        }
+        const QString run = text.mid(start, pos - start) + typed;
+        const QString conv = QString::fromStdString(dict::romaji_display(run.toStdString()));
+        raw = text.left(start) + conv + text.mid(pos);
+        render(start + static_cast<int>(conv.size()));
         return true;
     }
     // Mid-composition the field is modal: arrows, space, return

@@ -4,7 +4,7 @@
 # stale check-in could never pass silently). Needs the external
 # generator once per machine (pinned to the workspace's UniFFI):
 #
-#   cargo install uniffi-bindgen-cpp \
+#   cargo install uniffi-bindgen-cpp --locked \
 #     --git https://github.com/NordSecurity/uniffi-bindgen-cpp \
 #     --tag v0.10.0+v0.31.0
 find_program(UNIFFI_BINDGEN_CPP uniffi-bindgen-cpp

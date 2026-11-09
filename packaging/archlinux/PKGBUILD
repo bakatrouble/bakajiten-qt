@@ -1,7 +1,7 @@
 # Maintainer: bakatrouble <bakatrouble@gmail.com>
 pkgname=bakajiten-git
 _pkgname=bakajiten
-pkgver=0.2.0.r1.ge76ef8b
+pkgver=0.3.2.r0.gf65216d
 pkgrel=1
 pkgdesc='Japanese dictionary with handwriting recognition'
 arch=('x86_64')

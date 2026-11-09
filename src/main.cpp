@@ -45,8 +45,12 @@ int main(int argc, char *argv[]) {
     // the paths are undefined per-platform.
     QCoreApplication::setOrganizationName(QStringLiteral("bakajiten"));
     QCoreApplication::setApplicationName(QStringLiteral("bakajiten"));
-    // Shown in Help → About; keep in sync with project() VERSION.
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.2.0"));
+    // Shown in Help → About; the value is project() VERSION via
+    // BAKAJITEN_VERSION (cmake/app.cmake), never a literal here.
+#ifndef BAKAJITEN_VERSION
+#define BAKAJITEN_VERSION "0.0.0"
+#endif
+    QCoreApplication::setApplicationVersion(QStringLiteral(BAKAJITEN_VERSION));
     // Persisted appearance before any widget exists (cleanest
     // polish). The OS style is captured first so the settings
     // Default entry can name it.

@@ -40,6 +40,21 @@ void TestMainWindow::kanaInputConvertsWhileTyping() {
     QCOMPARE(input->text(), QStringLiteral("あs"));
     QTest::keyClick(input, Qt::Key_Backspace);
     QCOMPARE(input->text(), QStringLiteral("あ"));
+    // `/` converts to the middle dot, settling a pending run first
+    // (zkanji parity): `n` + `/` lands `ん・`, not raw.
+    input->clear();
+    QTest::keyClicks(input, "a/a");
+    QCOMPARE(input->text(), QStringLiteral("あ・あ"));
+    input->clear();
+    QTest::keyClicks(input, "n/");
+    QCOMPARE(input->text(), QStringLiteral("ん・"));
+    // zkanji foreign-spelling coverage: Hepburn twins convert the same.
+    input->clear();
+    QTest::keyClicks(input, "qa");
+    QCOMPARE(input->text(), QStringLiteral("くぁ"));
+    input->clear();
+    QTest::keyClicks(input, "whi");
+    QCOMPARE(input->text(), QStringLiteral("うぃ"));
     // Hepburn yōon convert like their Kunrei twins.
     input->clear();
     QTest::keyClicks(input, "shashoshu");
@@ -75,6 +90,21 @@ void TestMainWindow::kanaInputConvertsMidLine() {
     QTest::keyClick(input, Qt::Key_End);
     QTest::keyClicks(input, "ka");
     QCOMPARE(input->text(), QStringLiteral("かなか"));
+    // Mid-word `n` stays raw instead of committing to ん, so a
+    // following vowel settles it in place (あnあ → あなあ).
+    input->clear();
+    QTest::keyClicks(input, "aa");
+    QCOMPARE(input->text(), QStringLiteral("ああ"));
+    input->setCursorPosition(1);
+    QTest::keyClicks(input, "n");
+    QCOMPARE(input->text(), QStringLiteral("あnあ"));
+    QCOMPARE(input->cursorPosition(), 2);
+    // Still modal mid-word: arrows wait for the mora to settle.
+    QTest::keyClick(input, Qt::Key_Left);
+    QCOMPARE(input->cursorPosition(), 2);
+    QTest::keyClicks(input, "a");
+    QCOMPARE(input->text(), QStringLiteral("あなあ"));
+    QCOMPARE(input->cursorPosition(), 2);
 }
 
 void TestMainWindow::kanaInputSearchesConverted() {

@@ -7,11 +7,12 @@ class QLineEdit;
 
 /// IME-like romaji → kana for the search field: a raw romaji buffer behind the
 /// visible text, so ASCII letters convert as they land (`ta` →
-/// `た`, pending tail shown raw). Conversion happens at the
-/// cursor, mid-line included: the keystroke splices into the
-/// field text and the buffer re-derives from the mix (the
-/// converter passes kana through, so settled text survives
-/// verbatim). While a mora is pending the field is modal: only
+/// `た`, pending tail shown raw). Conversion extends the romaji
+/// run at the cursor: only the maximal trailing [a-z'-] run ending
+/// at the cursor plus the keystroke re-converts (`あn` + `a` →
+/// `あな`), so a mid-word `n` stays raw until settled. `-` lengthens
+/// and `/` becomes the middle dot through the same path (both settle
+/// the pending run first). While the run at the cursor is pending the
 /// backspace and conversion keystrokes land (arrows, space,
 /// return wait), and neither keys nor clicks move the cursor.
 /// Backspace keeps default handling and deletes the last display
